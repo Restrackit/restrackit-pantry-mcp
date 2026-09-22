@@ -57,3 +57,25 @@ class RestrackitClient:
                 error.get("message", response.text),
             )
         return response
+
+    async def ensure_category(self, name: str) -> None:
+        response = await self.request("GET", "/categories")
+        existing = {item["name"].lower() for item in response.json()}
+        if name.lower() in existing:
+            return
+        try:
+            await self.request("POST", "/categories", json={"name": name})
+        except RestrackitApiError as error:
+            if not is_already_exists(error):
+                raise
+
+    async def ensure_storage_method(self, name: str) -> None:
+        response = await self.request("GET", "/storage-methods")
+        existing = {item["name"].lower() for item in response.json()}
+        if name.lower() in existing:
+            return
+        try:
+            await self.request("POST", "/storage-methods", json={"name": name})
+        except RestrackitApiError as error:
+            if not is_already_exists(error):
+                raise

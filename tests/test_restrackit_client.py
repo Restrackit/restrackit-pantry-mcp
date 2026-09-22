@@ -54,3 +54,52 @@ async def test_request_raises_on_error_body():
     assert exc_info.value.code == "ERR_BUS_004"
     assert exc_info.value.status_code == 409
     assert is_already_exists(exc_info.value)
+
+
+@respx.mock
+async def test_ensure_category_skips_if_already_present():
+    respx.get("https://api.example.com/v1/categories").mock(
+        return_value=httpx.Response(
+            200,
+            json=[
+                {
+                    "public_id": "11111111-1111-1111-1111-111111111111",
+                    "name": "pulizia",
+                    "created_at": "2026-01-01T00:00:00Z",
+                    "updated_at": "2026-01-01T00:00:00Z",
+                    "version": 1,
+                }
+            ],
+        )
+    )
+    create_route = respx.post("https://api.example.com/v1/categories")
+    client = RestrackitClient(_settings(), _FakeTokenProvider())
+
+    await client.ensure_category("Pulizia")
+
+    assert not create_route.called
+
+
+@respx.mock
+async def test_ensure_category_creates_if_missing():
+    respx.get("https://api.example.com/v1/categories").mock(
+        return_value=httpx.Response(200, json=[])
+    )
+    create_route = respx.post("https://api.example.com/v1/categories").mock(
+        return_value=httpx.Response(
+            201,
+            json={
+                "public_id": "1",
+                "name": "pulizia",
+                "created_at": "2026-01-01T00:00:00Z",
+                "updated_at": "2026-01-01T00:00:00Z",
+                "version": 1,
+            },
+        )
+    )
+    client = RestrackitClient(_settings(), _FakeTokenProvider())
+
+    await client.ensure_category("Pulizia")
+
+    assert create_route.called
+    assert create_route.calls.last.request.content == b'{"name":"Pulizia"}'
