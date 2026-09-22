@@ -90,4 +90,4 @@ class RestrackitClient:
         for item in response.json()["items"]:
             if item["name"].lower() == name.lower():
                 return item["public_id"]
-        raise LookupError(f"Prodotto '{name}' non trovato dopo il bulk-load")
+        raise LookupError(f"Product '{name}' not found after bulk-load")
