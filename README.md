@@ -1,0 +1,85 @@
+# restrackit-pantry-mcp
+
+A remote [MCP](https://modelcontextprotocol.io) server that turns a snapshot
+of a grocery receipt into an up-to-date household pantry. Talk to Claude,
+snap a photo of your receipt or just say what you bought or used, and it
+tracks quantities on your behalf — no barcode scanning, no manual data
+entry, no rigid expiry-date bookkeeping.
+
+Built on top of [restrackit-core](https://github.com/restrackit/restrackit-core),
+restrackit's own inventory-traceability backend, reused here purely through
+its public REST API — this project ships no changes to that codebase.
+
+## How it works
+
+Claude is multimodal, so it reads the receipt photo itself: no OCR pipeline
+to build or maintain. For every line item it estimates a plausible expiry
+date and storage location (pantry, fridge, freezer, or anything else you
+mention) from general knowledge, then calls this server to persist it.
+`restrackit-pantry-mcp` is a thin, fully stateless translation layer — it
+holds no database of its own and defers every fact about inventory to
+restrackit-core.
+
+```text
+Claude (Desktop/mobile)
+   │  reads the receipt photo / listens to a spoken update
+   │  estimates category + plausible expiry date per item
+   ▼
+restrackit-pantry-mcp (AWS Lambda + API Gateway, MCP Streamable HTTP)
+   │  translates tool calls into authenticated REST requests
+   ▼
+restrackit-core REST API
+```
+
+## Tools exposed
+
+| Tool | Purpose |
+|---|---|
+| `add_purchase` | Record a purchase — creates the product/category/storage method if missing, one batch per unit |
+| `get_pantry_status` | Return how much of each product is currently on hand |
+| `record_consumption` | Close out units of a product you've used up (oldest first) |
+
+There's no dedicated "shopping list" tool — ask Claude what you're low on
+and it reasons over `get_pantry_status` in the conversation.
+
+## One-time setup
+
+1. Create the "Home" store on restrackit-core (requires an `ADMIN_ALL`
+   account):
+
+   ```bash
+   curl -X POST https://api.restrackit.example.com/v1/onboarding/stores \
+     -H "Authorization: Bearer <admin token>" \
+     -H "Content-Type: application/json" \
+     -d '{"store_name": "Home", "manager": {"username": "restrackit-pantry-mcp", "email": "you@example.com"}}'
+   ```
+
+   Note down the returned `store_id` and `temporary_password`.
+
+2. In Keycloak, grant the `restrackit-pantry-mcp` user the realm role
+   `manager` and set its password.
+
+3. Copy `.env.example` to `.env` and fill in every value, including the
+   `store_id` from step 1.
+
+4. Run `python scripts/setup_catalog.py` to pre-populate a few starter
+   categories and storage methods (optional — `add_purchase` creates
+   anything missing on demand anyway).
+
+## Deployment
+
+```bash
+sam build
+sam deploy --guided
+```
+
+Take the `ApiUrl` from the output and register it as a Custom Connector in
+Claude (Desktop/mobile), using the value of `MCP_AUTH_TOKEN` as its bearer
+token.
+
+## Development
+
+```bash
+pip install -e ".[dev]"
+pytest
+```
