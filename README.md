@@ -14,8 +14,10 @@ its public REST API — this project ships no changes to that codebase.
 
 Claude is multimodal, so it reads the receipt photo itself: no OCR pipeline
 to build or maintain. For every line item it estimates a plausible expiry
-date and storage location (pantry, fridge, freezer, or anything else you
-mention) from general knowledge, then calls this server to persist it.
+date and storage location — `dispensa` (pantry), `frigo` (fridge), or
+`congelatore` (freezer); other values are accepted but get a generic
+fallback shelf life instead of a tuned one — from general knowledge, then
+calls this server to persist it.
 `restrackit-pantry-mcp` is a thin, fully stateless translation layer — it
 holds no database of its own and defers every fact about inventory to
 restrackit-core.

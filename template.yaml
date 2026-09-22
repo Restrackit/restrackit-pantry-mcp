@@ -9,7 +9,7 @@ Globals:
     Runtime: python3.12
 
 Resources:
-  CasaMcpFunction:
+  PantryMcpFunction:
     Type: AWS::Serverless::Function
     Properties:
       CodeUri: .

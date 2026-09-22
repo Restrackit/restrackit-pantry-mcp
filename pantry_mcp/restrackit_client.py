@@ -143,16 +143,17 @@ class RestrackitClient:
         )
         return response.json()
 
-    async def list_open_batches(self, product_name: str) -> list[dict[str, Any]]:
+    async def list_open_batches(self, product_name: str | None = None) -> list[dict[str, Any]]:
         items: list[dict[str, Any]] = []
         cursor: str | None = None
         while True:
             params: dict[str, Any] = {
-                "product_name": product_name,
                 "is_empty": "false",
                 "sort": "id",
                 "order": "asc",
             }
+            if product_name is not None:
+                params["product_name"] = product_name
             if cursor is not None:
                 params["cursor"] = cursor
             response = await self.request("GET", "/inventory/list", params=params)

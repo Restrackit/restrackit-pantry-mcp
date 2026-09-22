@@ -1,5 +1,7 @@
 from unittest.mock import AsyncMock
 
+import pytest
+
 from pantry_mcp.pantry import add_purchase, get_pantry_status, record_consumption
 
 
@@ -66,3 +68,13 @@ async def test_record_consumption_reports_shortfall():
 
     assert client.complete_batch.await_count == 1
     assert result == {"closed": 1, "missing": 2}
+
+
+@pytest.mark.parametrize("quantity", [0, -1])
+async def test_record_consumption_rejects_non_positive_quantity(quantity):
+    client = AsyncMock()
+
+    with pytest.raises(ValueError, match="quantity must be at least 1"):
+        await record_consumption(client, "Pasta", quantity)
+
+    client.list_open_batches.assert_not_awaited()

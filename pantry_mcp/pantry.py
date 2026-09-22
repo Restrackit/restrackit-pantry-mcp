@@ -6,7 +6,7 @@ injected client.
 
 import hashlib
 from collections import Counter
-from datetime import date
+from datetime import UTC, datetime
 from typing import Any, TypedDict
 
 from pantry_mcp.restrackit_client import RestrackitClient
@@ -23,9 +23,15 @@ class PurchaseItem(TypedDict):
 
 
 def _generate_lot_code(product_name: str, unit_index: int) -> str:
-    """Build a deterministic-per-day, unique-per-unit lot code."""
+    """Build a unique-per-unit, unique-per-call lot code.
+
+    Includes a timestamp (not just a date) because this value doubles as the
+    ``Idempotency-Key`` sent to ``confirm_batch``, and restrackit-core dedupes
+    idempotency keys with a 24-hour TTL — a second purchase of the same
+    product on the same day must not collide with the first.
+    """
     digest = hashlib.sha1(product_name.encode()).hexdigest()[:8]
-    return f"{date.today():%Y%m%d}-{digest}-{unit_index}"
+    return f"{datetime.now(UTC):%Y%m%dT%H%M%S}-{digest}-{unit_index}"
 
 
 async def add_purchase(client: RestrackitClient, items: list[PurchaseItem]) -> dict[str, int]:
@@ -64,6 +70,9 @@ async def record_consumption(
     client: RestrackitClient, product_name: str, quantity: int
 ) -> dict[str, Any]:
     """Close the oldest open batches for a product to record consumption."""
+    if quantity < 1:
+        raise ValueError("quantity must be at least 1")
+
     open_batches = await client.list_open_batches(product_name)
     to_close = open_batches[:quantity]
 

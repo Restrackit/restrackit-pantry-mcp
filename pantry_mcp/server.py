@@ -6,7 +6,10 @@ Uses ``mcp`` 2.x, where the v1 ``FastMCP`` class was renamed ``MCPServer``
 import needs adapting.
 """
 
+from typing import Any
+
 from mcp.server.mcpserver import MCPServer
+from mcp.server.transport_security import TransportSecuritySettings
 from starlette.middleware.base import BaseHTTPMiddleware
 from starlette.requests import Request
 from starlette.responses import JSONResponse
@@ -25,8 +28,16 @@ def _get_client() -> RestrackitClient:
 
 
 @mcp.tool()
-async def add_purchase(items: list[pantry.PurchaseItem]) -> dict:
-    """Record a purchase: creates products/categories/storage methods as needed, one batch per unit."""
+async def add_purchase(items: list[pantry.PurchaseItem]) -> dict[str, int]:
+    """Record a purchase: creates products/categories/storage methods as needed, one batch per unit.
+
+    Each item's ``storage_method`` should be one of ``"dispensa"`` (pantry),
+    ``"frigo"`` (fridge), or ``"congelatore"`` (freezer) — these are the only
+    values with a tuned default shelf life. Other values are accepted but fall
+    back to a generic long shelf life, which is wrong for anything that
+    actually needs refrigeration. ``expiry_date`` must be in ``YYYY-MM-DD``
+    format.
+    """
     return await pantry.add_purchase(_get_client(), items)
 
 
@@ -37,7 +48,7 @@ async def get_pantry_status(product_name: str | None = None) -> dict[str, int]:
 
 
 @mcp.tool()
-async def record_consumption(product_name: str, quantity: int) -> dict:
+async def record_consumption(product_name: str, quantity: int) -> dict[str, Any]:
     """Close `quantity` open units of a product (oldest first)."""
     return await pantry.record_consumption(_get_client(), product_name, quantity)
 
@@ -61,6 +72,12 @@ async def health(request: Request) -> JSONResponse:
     return JSONResponse({"status": "ok"})
 
 
-app = mcp.streamable_http_app()
+app = mcp.streamable_http_app(
+    stateless_http=True,
+    json_response=True,
+    transport_security=TransportSecuritySettings(
+        enable_dns_rebinding_protection=False,
+    ),
+)
 app.add_middleware(_BearerAuthMiddleware)
 app.add_route("/health", health)
