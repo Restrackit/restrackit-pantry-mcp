@@ -56,8 +56,13 @@ and it reasons over `get_pantry_status` in the conversation.
 
    Note down the returned `store_id` and `temporary_password`.
 
-2. In Keycloak, grant the `restrackit-pantry-mcp` user the realm role
-   `manager` and set its password.
+2. No manual Keycloak step is needed here — the onboarding call in step 1
+   already assigned the `manager` realm role and set `temporary_password`.
+   That password is *temporary* (Keycloak's `UPDATE_PASSWORD` required
+   action), so it can't be used with `TokenProvider`'s password-grant flow
+   as-is: log in interactively once to set a permanent password (or have an
+   admin reset it via the Keycloak admin console / `kcadm.sh`), otherwise
+   the server will fail to authenticate.
 
 3. Copy `.env.example` to `.env` and fill in every value, including the
    `store_id` from step 1.
