@@ -1,3 +1,4 @@
+import pydantic
 import pytest
 
 from pantry_mcp.config import get_settings
@@ -25,5 +26,5 @@ def test_settings_missing_var_raises(monkeypatch):
     monkeypatch.delenv("KEYCLOAK_URL", raising=False)
     get_settings.cache_clear()
 
-    with pytest.raises(Exception):
+    with pytest.raises(pydantic.ValidationError):
         get_settings()

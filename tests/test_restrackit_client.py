@@ -5,7 +5,11 @@ import pytest
 import respx
 
 from pantry_mcp.config import Settings
-from pantry_mcp.restrackit_client import RestrackitApiError, RestrackitClient, is_already_exists
+from pantry_mcp.restrackit_client import (
+    RestrackitApiError,
+    RestrackitClient,
+    is_already_exists,
+)
 
 
 def _settings() -> Settings:
