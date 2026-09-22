@@ -217,3 +217,87 @@ async def test_ensure_storage_rule_uses_generic_default_for_unknown_storage_meth
         "duration_days": 180,
         "duration_hours": 0,
     }
+
+
+@respx.mock
+async def test_get_storage_method_public_id_matches_case_insensitive():
+    respx.get("https://api.example.com/v1/storage-methods").mock(
+        return_value=httpx.Response(
+            200,
+            json=[
+                {
+                    "public_id": "44444444-4444-4444-4444-444444444444",
+                    "name": "frigo",
+                    "created_at": "2026-01-01T00:00:00Z",
+                    "updated_at": "2026-01-01T00:00:00Z",
+                    "version": 1,
+                }
+            ],
+        )
+    )
+    client = RestrackitClient(_settings(), _FakeTokenProvider())
+
+    public_id = await client.get_storage_method_public_id("Frigo")
+
+    assert public_id == "44444444-4444-4444-4444-444444444444"
+
+
+@respx.mock
+async def test_confirm_batch_sends_expected_payload_and_idempotency_key():
+    route = respx.post("https://api.example.com/v1/inventory/confirm").mock(
+        return_value=httpx.Response(201, json={"status": "ok", "public_id": "b1"})
+    )
+    client = RestrackitClient(_settings(), _FakeTokenProvider())
+
+    result = await client.confirm_batch(
+        "Pasta di semola", "44444444-4444-4444-4444-444444444444", "2027-01-01", "20260922-abc-0"
+    )
+
+    sent = route.calls.last.request
+    assert sent.headers["Idempotency-Key"] == "20260922-abc-0"
+    assert result == {"status": "ok", "public_id": "b1"}
+
+
+@respx.mock
+async def test_list_open_batches_follows_pagination():
+    respx.get("https://api.example.com/v1/inventory/list").mock(
+        side_effect=[
+            httpx.Response(
+                200,
+                json={
+                    "status": "ok",
+                    "count": 1,
+                    "items": [{"public_id": "b1"}],
+                    "next_cursor": "cur1",
+                },
+            ),
+            httpx.Response(
+                200,
+                json={
+                    "status": "ok",
+                    "count": 1,
+                    "items": [{"public_id": "b2"}],
+                    "next_cursor": None,
+                },
+            ),
+        ]
+    )
+    client = RestrackitClient(_settings(), _FakeTokenProvider())
+
+    items = await client.list_open_batches("Pasta")
+
+    assert [item["public_id"] for item in items] == ["b1", "b2"]
+
+
+@respx.mock
+async def test_complete_batch_sends_reason_and_version():
+    route = respx.post("https://api.example.com/v1/inventory/batch/b1/complete").mock(
+        return_value=httpx.Response(200, json={"status": "ok", "public_id": "b1", "is_empty": True})
+    )
+    client = RestrackitClient(_settings(), _FakeTokenProvider())
+
+    result = await client.complete_batch("b1", version=3, reason="other")
+
+    body = json.loads(route.calls.last.request.content)
+    assert body == {"reason": "other", "version": 3}
+    assert result["is_empty"] is True

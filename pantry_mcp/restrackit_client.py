@@ -87,6 +87,13 @@ class RestrackitClient:
             if not is_already_exists(error):
                 raise
 
+    async def get_storage_method_public_id(self, name: str) -> str:
+        response = await self.request("GET", "/storage-methods")
+        for item in response.json():
+            if item["name"].lower() == name.lower():
+                return item["public_id"]
+        raise LookupError(f"Storage method '{name}' not found")
+
     async def ensure_product(self, name: str, category: str) -> str:
         await self.request(
             "POST",
@@ -118,3 +125,49 @@ class RestrackitClient:
         except RestrackitApiError as error:
             if not is_already_exists(error):
                 raise
+
+    async def confirm_batch(
+        self, product_name: str, storage_method_public_id: str, expiry_date: str, lot_code: str
+    ) -> dict[str, Any]:
+        response = await self.request(
+            "POST",
+            "/inventory/confirm",
+            json={
+                "product_name": product_name,
+                "lot_code": lot_code,
+                "expiry_date": expiry_date,
+                "confidence": 1.0,
+                "storage_method_public_id": storage_method_public_id,
+            },
+            headers={"Idempotency-Key": lot_code},
+        )
+        return response.json()
+
+    async def list_open_batches(self, product_name: str) -> list[dict[str, Any]]:
+        items: list[dict[str, Any]] = []
+        cursor: str | None = None
+        while True:
+            params: dict[str, Any] = {
+                "product_name": product_name,
+                "is_empty": "false",
+                "sort": "id",
+                "order": "asc",
+            }
+            if cursor is not None:
+                params["cursor"] = cursor
+            response = await self.request("GET", "/inventory/list", params=params)
+            payload = response.json()
+            items.extend(payload["items"])
+            cursor = payload["next_cursor"]
+            if cursor is None:
+                return items
+
+    async def complete_batch(
+        self, batch_id: str, version: int, reason: str = "other"
+    ) -> dict[str, Any]:
+        response = await self.request(
+            "POST",
+            f"/inventory/batch/{batch_id}/complete",
+            json={"reason": reason, "version": version},
+        )
+        return response.json()
