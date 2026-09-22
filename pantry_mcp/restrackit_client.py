@@ -79,3 +79,15 @@ class RestrackitClient:
         except RestrackitApiError as error:
             if not is_already_exists(error):
                 raise
+
+    async def ensure_product(self, name: str, category: str) -> str:
+        await self.request(
+            "POST",
+            "/products/bulk-load",
+            json=[{"name": name, "category": category, "allergens": []}],
+        )
+        response = await self.request("GET", "/products/list", params={"category": category})
+        for item in response.json()["items"]:
+            if item["name"].lower() == name.lower():
+                return item["public_id"]
+        raise LookupError(f"Prodotto '{name}' non trovato dopo il bulk-load")
