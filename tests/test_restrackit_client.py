@@ -1,3 +1,5 @@
+import json
+
 import httpx
 import pytest
 import respx
@@ -154,3 +156,64 @@ async def test_ensure_product_raises_if_not_found_after_load():
 
     with pytest.raises(LookupError):
         await client.ensure_product("Pasta di semola", "pasta")
+
+
+@respx.mock
+async def test_ensure_storage_rule_creates_with_default_duration():
+    route = respx.post(
+        "https://api.example.com/v1/products/22222222-2222-2222-2222-222222222222/storage-rules"
+    ).mock(return_value=httpx.Response(201, json={"public_id": "1"}))
+    client = RestrackitClient(_settings(), _FakeTokenProvider())
+
+    await client.ensure_storage_rule(
+        "22222222-2222-2222-2222-222222222222",
+        "33333333-3333-3333-3333-333333333333",
+        "frigo",
+    )
+
+    sent = route.calls.last.request
+    body = json.loads(sent.content)
+    assert body == {
+        "storage_method_public_id": "33333333-3333-3333-3333-333333333333",
+        "duration_days": 7,
+        "duration_hours": 0,
+    }
+
+
+@respx.mock
+async def test_ensure_storage_rule_ignores_already_exists():
+    respx.post(
+        "https://api.example.com/v1/products/22222222-2222-2222-2222-222222222222/storage-rules"
+    ).mock(
+        return_value=httpx.Response(
+            409, json={"error": {"code": "ERR_BUS_004", "message": "già esiste"}}
+        )
+    )
+    client = RestrackitClient(_settings(), _FakeTokenProvider())
+
+    await client.ensure_storage_rule(
+        "22222222-2222-2222-2222-222222222222",
+        "33333333-3333-3333-3333-333333333333",
+        "frigo",
+    )  # must not raise
+
+
+@respx.mock
+async def test_ensure_storage_rule_uses_generic_default_for_unknown_storage_method():
+    route = respx.post(
+        "https://api.example.com/v1/products/22222222-2222-2222-2222-222222222222/storage-rules"
+    ).mock(return_value=httpx.Response(201, json={"public_id": "1"}))
+    client = RestrackitClient(_settings(), _FakeTokenProvider())
+
+    await client.ensure_storage_rule(
+        "22222222-2222-2222-2222-222222222222",
+        "55555555-5555-5555-5555-555555555555",
+        "cantina",
+    )
+
+    body = json.loads(route.calls.last.request.content)
+    assert body == {
+        "storage_method_public_id": "55555555-5555-5555-5555-555555555555",
+        "duration_days": 180,
+        "duration_hours": 0,
+    }

@@ -21,6 +21,13 @@ def is_already_exists(error: RestrackitApiError) -> bool:
     return error.code == "ERR_BUS_004"
 
 
+STORAGE_METHOD_DEFAULT_DURATION_DAYS = {
+    "dispensa": 180,
+    "frigo": 7,
+    "congelatore": 180,
+}
+
+
 class RestrackitClient:
     def __init__(self, settings: Settings, token_provider: _TokenSource) -> None:
         self._settings = settings
@@ -91,3 +98,23 @@ class RestrackitClient:
             if item["name"].lower() == name.lower():
                 return item["public_id"]
         raise LookupError(f"Product '{name}' not found after bulk-load")
+
+    async def ensure_storage_rule(
+        self, product_public_id: str, storage_method_public_id: str, storage_method_name: str
+    ) -> None:
+        duration_days = STORAGE_METHOD_DEFAULT_DURATION_DAYS.get(
+            storage_method_name.lower(), 180
+        )
+        try:
+            await self.request(
+                "POST",
+                f"/products/{product_public_id}/storage-rules",
+                json={
+                    "storage_method_public_id": storage_method_public_id,
+                    "duration_days": duration_days,
+                    "duration_hours": 0,
+                },
+            )
+        except RestrackitApiError as error:
+            if not is_already_exists(error):
+                raise
