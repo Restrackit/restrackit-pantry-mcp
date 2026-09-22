@@ -1,5 +1,4 @@
 import httpx
-import pytest
 import respx
 
 from pantry_mcp.auth import TokenProvider
@@ -43,3 +42,23 @@ async def test_get_token_uses_cache_before_expiry():
     await provider.get_token()
 
     assert route.call_count == 1
+
+
+@respx.mock
+async def test_get_token_refetches_after_expiry():
+    route = respx.post(
+        "https://kc.example.com/realms/restrackit/protocol/openid-connect/token"
+    ).mock(
+        side_effect=[
+            httpx.Response(200, json={"access_token": "expired", "expires_in": -100}),
+            httpx.Response(200, json={"access_token": "fresh", "expires_in": 300}),
+        ]
+    )
+
+    provider = TokenProvider(_settings())
+    first = await provider.get_token()
+    second = await provider.get_token()
+
+    assert first == "expired"
+    assert second == "fresh"
+    assert route.call_count == 2

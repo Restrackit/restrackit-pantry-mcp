@@ -1,6 +1,6 @@
 import pytest
 
-from pantry_mcp.config import Settings, get_settings
+from pantry_mcp.config import get_settings
 
 
 def test_settings_load_from_env(monkeypatch):
