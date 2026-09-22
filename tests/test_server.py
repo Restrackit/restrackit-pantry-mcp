@@ -39,3 +39,22 @@ def test_mcp_endpoint_rejects_wrong_bearer_token():
     response = client.post("/mcp", json={}, headers={"Authorization": "Bearer wrong"})
 
     assert response.status_code == 401
+
+
+def test_lambda_handler_wraps_health_check():
+    from pantry_mcp.lambda_handler import handler
+
+    event = {
+        "version": "2.0",
+        "routeKey": "GET /health",
+        "rawPath": "/health",
+        "headers": {},
+        "requestContext": {
+            "http": {"method": "GET", "path": "/health", "sourceIp": "127.0.0.1"}
+        },
+        "isBase64Encoded": False,
+    }
+
+    response = handler(event, None)
+
+    assert response["statusCode"] == 200

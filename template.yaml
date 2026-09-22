@@ -1,0 +1,57 @@
+AWSTemplateFormatVersion: "2010-09-09"
+Transform: AWS::Serverless-2016-10-31
+Description: restrackit-pantry-mcp — MCP server for the home pantry
+
+Globals:
+  Function:
+    Timeout: 15
+    MemorySize: 256
+    Runtime: python3.12
+
+Resources:
+  CasaMcpFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      CodeUri: .
+      Handler: pantry_mcp.lambda_handler.handler
+      Environment:
+        Variables:
+          KEYCLOAK_URL: !Ref KeycloakUrl
+          KEYCLOAK_REALM: !Ref KeycloakRealm
+          KEYCLOAK_CLIENT_ID: !Ref KeycloakClientId
+          KEYCLOAK_USERNAME: !Ref KeycloakUsername
+          KEYCLOAK_PASSWORD: !Ref KeycloakPassword
+          RESTRACKIT_BASE_URL: !Ref RestrackitBaseUrl
+          RESTRACKIT_STORE_ID: !Ref RestrackitStoreId
+          MCP_AUTH_TOKEN: !Ref McpAuthToken
+      Events:
+        Api:
+          Type: HttpApi
+          Properties:
+            Path: /{proxy+}
+            Method: ANY
+
+Parameters:
+  KeycloakUrl:
+    Type: String
+  KeycloakRealm:
+    Type: String
+  KeycloakClientId:
+    Type: String
+  KeycloakUsername:
+    Type: String
+  KeycloakPassword:
+    Type: String
+    NoEcho: true
+  RestrackitBaseUrl:
+    Type: String
+  RestrackitStoreId:
+    Type: String
+  McpAuthToken:
+    Type: String
+    NoEcho: true
+
+Outputs:
+  ApiUrl:
+    Description: Public URL of the MCP server
+    Value: !Sub "https://${ServerlessHttpApi}.execute-api.${AWS::Region}.amazonaws.com"
