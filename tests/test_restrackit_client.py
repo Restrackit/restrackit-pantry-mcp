@@ -260,7 +260,7 @@ async def test_confirm_batch_sends_expected_payload_and_idempotency_key():
 
 @respx.mock
 async def test_list_open_batches_follows_pagination():
-    respx.get("https://api.example.com/v1/inventory/list").mock(
+    route = respx.get("https://api.example.com/v1/inventory/list").mock(
         side_effect=[
             httpx.Response(
                 200,
@@ -287,6 +287,9 @@ async def test_list_open_batches_follows_pagination():
     items = await client.list_open_batches("Pasta")
 
     assert [item["public_id"] for item in items] == ["b1", "b2"]
+    assert route.call_count == 2
+    assert "cursor" not in route.calls[0].request.url.params
+    assert route.calls[1].request.url.params["cursor"] == "cur1"
 
 
 @respx.mock
