@@ -6,7 +6,6 @@ Uses ``mcp`` 2.x, where the v1 ``FastMCP`` class was renamed ``MCPServer``
 import needs adapting.
 """
 
-import logging
 from typing import Any
 
 from mcp.server.mcpserver import MCPServer
@@ -20,8 +19,6 @@ from pantry_mcp import pantry
 from pantry_mcp.auth import TokenProvider
 from pantry_mcp.config import get_settings
 from pantry_mcp.restrackit_client import RestrackitClient
-
-logging.getLogger().setLevel(logging.INFO)
 
 mcp = MCPServer("restrackit-pantry-mcp")
 
@@ -62,15 +59,6 @@ class _BearerAuthMiddleware(BaseHTTPMiddleware):
 
     async def dispatch(self, request: Request, call_next):
         """Reject requests missing or mismatching the configured bearer token."""
-        # TODO: temporary diagnostic logging for the connector-setup issue, remove once resolved.
-        logging.getLogger("pantry_mcp.access").info(
-            "%s %s has_auth_header=%s origin=%r user_agent=%r",
-            request.method,
-            request.url.path,
-            request.headers.get("authorization") is not None,
-            request.headers.get("origin"),
-            request.headers.get("user-agent"),
-        )
         if request.url.path == "/health" or request.method == "OPTIONS":
             return await call_next(request)
 
