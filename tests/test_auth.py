@@ -13,8 +13,7 @@ def _settings() -> Settings:
         keycloak_username="restrackit-pantry-mcp",
         keycloak_password="secret",
         restrackit_base_url="https://api.example.com/v1",
-        restrackit_store_id=1,
-        mcp_auth_token="token123",
+        tenants_table_name="PantryMcpTenants",
     )
 
 
@@ -22,7 +21,11 @@ def _settings() -> Settings:
 async def test_get_token_fetches_and_returns_access_token():
     route = respx.post(
         "https://kc.example.com/realms/restrackit/protocol/openid-connect/token"
-    ).mock(return_value=httpx.Response(200, json={"access_token": "abc", "expires_in": 300}))
+    ).mock(
+        return_value=httpx.Response(
+            200, json={"access_token": "abc", "expires_in": 300}
+        )
+    )
 
     provider = TokenProvider(_settings())
     token = await provider.get_token()
@@ -35,7 +38,11 @@ async def test_get_token_fetches_and_returns_access_token():
 async def test_get_token_uses_cache_before_expiry():
     route = respx.post(
         "https://kc.example.com/realms/restrackit/protocol/openid-connect/token"
-    ).mock(return_value=httpx.Response(200, json={"access_token": "abc", "expires_in": 300}))
+    ).mock(
+        return_value=httpx.Response(
+            200, json={"access_token": "abc", "expires_in": 300}
+        )
+    )
 
     provider = TokenProvider(_settings())
     await provider.get_token()

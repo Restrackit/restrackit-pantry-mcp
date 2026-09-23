@@ -6,6 +6,7 @@ Uses ``mcp`` 2.x, where the v1 ``FastMCP`` class was renamed ``MCPServer``
 import needs adapting.
 """
 
+from contextvars import ContextVar
 from typing import Any
 
 from mcp.server.mcpserver import MCPServer
@@ -19,13 +20,17 @@ from pantry_mcp import pantry
 from pantry_mcp.auth import TokenProvider
 from pantry_mcp.config import get_settings
 from pantry_mcp.restrackit_client import RestrackitClient
+from pantry_mcp.tenants import Tenant, TenantStore
 
 mcp = MCPServer("restrackit-pantry-mcp")
+
+_current_tenant: ContextVar[Tenant] = ContextVar("current_tenant")
 
 
 def _get_client() -> RestrackitClient:
     settings = get_settings()
-    return RestrackitClient(settings, TokenProvider(settings))
+    tenant = _current_tenant.get()
+    return RestrackitClient(settings, TokenProvider(settings), store_id=tenant.store_id)
 
 
 @mcp.tool()
@@ -61,17 +66,34 @@ async def get_expiring_items() -> list[dict[str, Any]]:
 
 
 class _BearerAuthMiddleware(BaseHTTPMiddleware):
-    """Require a valid bearer token on every route except ``/health``."""
+    """Resolve every request's bearer token to a tenant, or reject it.
+
+    A missing header, an unknown token, and a DynamoDB lookup failure all
+    return the same 401 — the response must never reveal which case it was,
+    otherwise a caller could enumerate valid tokens or learn the registry is
+    down.
+    """
 
     async def dispatch(self, request: Request, call_next):
-        """Reject requests missing or mismatching the configured bearer token."""
+        """Reject requests with no bearer token or one that resolves to no tenant."""
         if request.url.path == "/health" or request.method == "OPTIONS":
             return await call_next(request)
 
-        expected = f"Bearer {get_settings().mcp_auth_token}"
-        if request.headers.get("Authorization") != expected:
+        auth_header = request.headers.get("Authorization", "")
+        if not auth_header.startswith("Bearer "):
             return JSONResponse({"error": "unauthorized"}, status_code=401)
-        return await call_next(request)
+        token = auth_header.removeprefix("Bearer ")
+
+        tenant_store = TenantStore(get_settings().tenants_table_name)
+        tenant = await tenant_store.resolve(token)
+        if tenant is None:
+            return JSONResponse({"error": "unauthorized"}, status_code=401)
+
+        reset_token = _current_tenant.set(tenant)
+        try:
+            return await call_next(request)
+        finally:
+            _current_tenant.reset(reset_token)
 
 
 async def health(request: Request) -> JSONResponse:
