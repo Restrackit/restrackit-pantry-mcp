@@ -53,16 +53,25 @@ and it reasons over `get_pantry_status` in the conversation.
    curl -X POST https://api.restrackit.example.com/v1/onboarding/stores \
      -H "Authorization: Bearer <admin token>" \
      -H "Content-Type: application/json" \
-     -d '{"store_name": "Casa di Marco", "manager": {"username": "restrackit-pantry-mcp", "email": "you@example.com"}}'
+     -d '{"store_name": "Casa di Marco", "manager": {"username": "restrackit-pantry-mcp", "email": "friend@example.com"}}'
    ```
 
-   Note down the returned `store_id`.
+   Use a unique email per friend — Keycloak rejects duplicates. Note down
+   the returned `store_id`.
 
-2. No manual Keycloak step is needed — one shared `ADMIN_ALL` service
-   account (configured once at deploy time) can address any store via the
-   `X-Target-Store` header. That account's `temporary_password` still needs
-   a one-time interactive login to become permanent, as before, but that's
-   only done once for the whole deployment, not per friend.
+   This call also creates a per-store `manager` account (with a
+   `temporary_password` in the response) as a byproduct of onboarding. That
+   account is **not** used by pantry-mcp — it belongs to restrackit-core's
+   own admin/manager UI, if the friend ever logs into that directly. Ignore
+   it for pantry-mcp purposes.
+
+2. pantry-mcp itself never touches the per-store `manager` account above.
+   It uses one shared `ADMIN_ALL` service account, configured once for the
+   whole deployment (not per friend), which can address any store via the
+   `X-Target-Store` header. That shared account's own `temporary_password`
+   needed a one-time interactive login to become permanent when the
+   deployment was first set up — this step is not repeated when onboarding
+   additional friends.
 
 3. Generate a token and register them in the tenants table:
 
