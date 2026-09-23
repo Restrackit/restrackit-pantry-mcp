@@ -44,34 +44,35 @@ restrackit-core REST API
 There's no dedicated "shopping list" tool — ask Claude what you're low on
 and it reasons over `get_pantry_status` in the conversation.
 
-## One-time setup
+## One-time setup (per friend)
 
-1. Create the "Home" store on restrackit-core (requires an `ADMIN_ALL`
+1. Create their "Home" store on restrackit-core (requires an `ADMIN_ALL`
    account):
 
    ```bash
    curl -X POST https://api.restrackit.example.com/v1/onboarding/stores \
      -H "Authorization: Bearer <admin token>" \
      -H "Content-Type: application/json" \
-     -d '{"store_name": "Home", "manager": {"username": "restrackit-pantry-mcp", "email": "you@example.com"}}'
+     -d '{"store_name": "Casa di Marco", "manager": {"username": "restrackit-pantry-mcp", "email": "you@example.com"}}'
    ```
 
-   Note down the returned `store_id` and `temporary_password`.
+   Note down the returned `store_id`.
 
-2. No manual Keycloak step is needed here — the onboarding call in step 1
-   already assigned the `manager` realm role and set `temporary_password`.
-   That password is *temporary* (Keycloak's `UPDATE_PASSWORD` required
-   action), so it can't be used with `TokenProvider`'s password-grant flow
-   as-is: log in interactively once to set a permanent password (or have an
-   admin reset it via the Keycloak admin console / `kcadm.sh`), otherwise
-   the server will fail to authenticate.
+2. No manual Keycloak step is needed — one shared `ADMIN_ALL` service
+   account (configured once at deploy time) can address any store via the
+   `X-Target-Store` header. That account's `temporary_password` still needs
+   a one-time interactive login to become permanent, as before, but that's
+   only done once for the whole deployment, not per friend.
 
-3. Copy `.env.example` to `.env` and fill in every value, including the
-   `store_id` from step 1.
+3. Generate a token and register them in the tenants table:
 
-4. Run `python scripts/setup_catalog.py` to pre-populate a few starter
-   categories and storage methods (optional — `add_purchase` creates
-   anything missing on demand anyway).
+   ```bash
+   TOKEN=$(python -c "import secrets; print(secrets.token_urlsafe(32))")
+   python scripts/add_tenant.py "Marco" <store_id> "$TOKEN"
+   ```
+
+4. Give them the `ApiUrl` (from the CDK output) and their token to register
+   as a Custom Connector in Claude (Desktop/mobile).
 
 ## Deployment
 
@@ -87,14 +88,11 @@ cdk deploy \
   --parameters KeycloakClientId=... \
   --parameters KeycloakUsername=... \
   --parameters KeycloakPassword=... \
-  --parameters RestrackitBaseUrl=... \
-  --parameters RestrackitStoreId=... \
-  --parameters McpAuthToken=...
+  --parameters RestrackitBaseUrl=...
 ```
 
-Take the `ApiUrl` from the output and register it as a Custom Connector in
-Claude (Desktop/mobile), using the value of `MCP_AUTH_TOKEN` as its bearer
-token.
+Take the `ApiUrl` output for friends' connector URLs, and `TenantsTableName`
+for use with `scripts/add_tenant.py`.
 
 ## Development
 
