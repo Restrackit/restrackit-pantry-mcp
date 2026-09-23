@@ -79,8 +79,8 @@ Infrastructure is defined as AWS CDK (Python) under `infra/`:
 
 ```bash
 cd infra
-python3 -m venv .venv && source .venv/bin/activate
-pip install -r requirements.txt
+uv venv .venv && source .venv/bin/activate
+uv pip install --python .venv -r requirements.txt
 cdk deploy \
   --parameters KeycloakUrl=... \
   --parameters KeycloakRealm=... \
@@ -99,6 +99,6 @@ token.
 ## Development
 
 ```bash
-pip install -e ".[dev]"
-pytest
+uv sync --extra dev
+uv run pytest
 ```
