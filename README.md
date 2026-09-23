@@ -75,9 +75,21 @@ and it reasons over `get_pantry_status` in the conversation.
 
 ## Deployment
 
+Infrastructure is defined as AWS CDK (Python) under `infra/`:
+
 ```bash
-sam build
-sam deploy --guided
+cd infra
+python3 -m venv .venv && source .venv/bin/activate
+pip install -r requirements.txt
+cdk deploy \
+  --parameters KeycloakUrl=... \
+  --parameters KeycloakRealm=... \
+  --parameters KeycloakClientId=... \
+  --parameters KeycloakUsername=... \
+  --parameters KeycloakPassword=... \
+  --parameters RestrackitBaseUrl=... \
+  --parameters RestrackitStoreId=... \
+  --parameters McpAuthToken=...
 ```
 
 Take the `ApiUrl` from the output and register it as a Custom Connector in
