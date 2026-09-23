@@ -1,5 +1,4 @@
 import pytest
-from mcp.server.transport_security import TransportSecuritySettings
 from starlette.testclient import TestClient
 
 from pantry_mcp import server
@@ -54,14 +53,7 @@ def test_mcp_handshake_lists_all_tools():
     # instance, and `TestClient(...)` as a context manager triggers that
     # lifespan — reusing `server.app` here would break the lambda handler
     # test, which also starts it (via Mangum).
-    app = server.mcp.streamable_http_app(
-        stateless_http=True,
-        json_response=True,
-        transport_security=TransportSecuritySettings(enable_dns_rebinding_protection=False),
-    )
-    app.add_middleware(server._BearerAuthMiddleware)
-
-    with TestClient(app) as client:
+    with TestClient(server.create_app()) as client:
         init_response = client.post(
             "/mcp",
             json={
@@ -107,3 +99,28 @@ def test_lambda_handler_wraps_health_check():
     response = handler(event, None)
 
     assert response["statusCode"] == 200
+
+
+def test_lambda_handler_survives_multiple_invocations():
+    """A warm Lambda container serves many requests through the same handler.
+
+    Regression test: mcp's StreamableHTTPSessionManager can only run its
+    lifespan once per instance, so a handler built around a module-level app
+    singleton crashes from the second invocation onward.
+    """
+    from pantry_mcp.lambda_handler import handler
+
+    event = {
+        "version": "2.0",
+        "routeKey": "GET /health",
+        "rawPath": "/health",
+        "headers": {},
+        "requestContext": {
+            "http": {"method": "GET", "path": "/health", "sourceIp": "127.0.0.1"}
+        },
+        "isBase64Encoded": False,
+    }
+
+    for _ in range(3):
+        response = handler(event, None)
+        assert response["statusCode"] == 200

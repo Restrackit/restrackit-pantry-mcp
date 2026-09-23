@@ -72,12 +72,24 @@ async def health(request: Request) -> JSONResponse:
     return JSONResponse({"status": "ok"})
 
 
-app = mcp.streamable_http_app(
-    stateless_http=True,
-    json_response=True,
-    transport_security=TransportSecuritySettings(
-        enable_dns_rebinding_protection=False,
-    ),
-)
-app.add_middleware(_BearerAuthMiddleware)
-app.add_route("/health", health)
+def create_app():
+    """Build a fresh ASGI app.
+
+    ``streamable_http_app()`` creates a new ``StreamableHTTPSessionManager``
+    each call; that manager's lifespan can only run once per instance, so a
+    module-level singleton reused across warm Lambda invocations crashes on
+    the second request. Call this once per invocation instead.
+    """
+    new_app = mcp.streamable_http_app(
+        stateless_http=True,
+        json_response=True,
+        transport_security=TransportSecuritySettings(
+            enable_dns_rebinding_protection=False,
+        ),
+    )
+    new_app.add_middleware(_BearerAuthMiddleware)
+    new_app.add_route("/health", health)
+    return new_app
+
+
+app = create_app()
