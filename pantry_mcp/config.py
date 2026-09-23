@@ -10,8 +10,7 @@ class Settings(BaseSettings):
     keycloak_username: str
     keycloak_password: str
     restrackit_base_url: str
-    restrackit_store_id: int
-    mcp_auth_token: str
+    tenants_table_name: str
 
 
 @lru_cache

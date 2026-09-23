@@ -11,15 +11,13 @@ def test_settings_load_from_env(monkeypatch):
     monkeypatch.setenv("KEYCLOAK_USERNAME", "restrackit-pantry-mcp")
     monkeypatch.setenv("KEYCLOAK_PASSWORD", "secret")
     monkeypatch.setenv("RESTRACKIT_BASE_URL", "https://api.example.com/v1")
-    monkeypatch.setenv("RESTRACKIT_STORE_ID", "1")
-    monkeypatch.setenv("MCP_AUTH_TOKEN", "token123")
+    monkeypatch.setenv("TENANTS_TABLE_NAME", "PantryMcpTenants")
     get_settings.cache_clear()
 
     settings = get_settings()
 
     assert settings.keycloak_url == "https://kc.example.com"
-    assert settings.restrackit_store_id == 1
-    assert settings.mcp_auth_token == "token123"
+    assert settings.tenants_table_name == "PantryMcpTenants"
 
 
 def test_settings_missing_var_raises(monkeypatch):
