@@ -21,6 +21,7 @@ class PantryMcpStack(Stack):
         tenants_table = dynamodb.Table(
             self,
             "PantryMcpTenants",
+            table_name="PantryMcpTenants",
             partition_key=dynamodb.Attribute(name="token_hash", type=dynamodb.AttributeType.STRING),
             billing_mode=dynamodb.BillingMode.PAY_PER_REQUEST,
             removal_policy=RemovalPolicy.RETAIN,
