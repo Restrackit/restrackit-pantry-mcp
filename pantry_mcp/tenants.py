@@ -11,7 +11,7 @@ import hashlib
 from asyncio import to_thread
 
 import boto3
-from botocore.exceptions import ClientError
+from botocore.exceptions import BotoCoreError, ClientError
 from pydantic import BaseModel
 
 
@@ -42,7 +42,7 @@ class TenantStore:
                 TableName=self._table_name,
                 Key={"token_hash": {"S": hash_token(token)}},
             )
-        except ClientError:
+        except (ClientError, BotoCoreError):
             return None
 
         item = response.get("Item")

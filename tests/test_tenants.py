@@ -62,3 +62,18 @@ def test_hash_token_is_deterministic_and_sha256():
     import hashlib
 
     assert hash_token("abc") == hashlib.sha256(b"abc").hexdigest()
+
+
+async def test_resolve_returns_none_on_network_error(monkeypatch):
+    from botocore.exceptions import EndpointConnectionError
+
+    store = TenantStore(TABLE_NAME)
+
+    def _raise(*args, **kwargs):
+        raise EndpointConnectionError(endpoint_url="https://dynamodb.example.com")
+
+    monkeypatch.setattr(store._client, "get_item", _raise)
+
+    tenant = await store.resolve("any-token")
+
+    assert tenant is None
