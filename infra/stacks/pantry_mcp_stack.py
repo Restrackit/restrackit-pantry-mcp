@@ -2,6 +2,7 @@ from aws_cdk import CfnOutput, CfnParameter, Duration, RemovalPolicy, Stack
 from aws_cdk import aws_apigatewayv2 as apigwv2
 from aws_cdk import aws_apigatewayv2_integrations as apigwv2_integrations
 from aws_cdk import aws_dynamodb as dynamodb
+from aws_cdk import aws_iam as iam
 from aws_cdk import aws_lambda as _lambda
 from aws_cdk.aws_lambda_python_alpha import BundlingOptions, PythonFunction
 from constructs import Construct
@@ -14,8 +15,6 @@ class PantryMcpStack(Stack):
         keycloak_url = CfnParameter(self, "KeycloakUrl", type="String")
         keycloak_realm = CfnParameter(self, "KeycloakRealm", type="String")
         keycloak_client_id = CfnParameter(self, "KeycloakClientId", type="String")
-        keycloak_username = CfnParameter(self, "KeycloakUsername", type="String")
-        keycloak_password = CfnParameter(self, "KeycloakPassword", type="String", no_echo=True)
         restrackit_base_url = CfnParameter(self, "RestrackitBaseUrl", type="String")
 
         tenants_table = dynamodb.Table(
@@ -51,13 +50,19 @@ class PantryMcpStack(Stack):
                 "KEYCLOAK_URL": keycloak_url.value_as_string,
                 "KEYCLOAK_REALM": keycloak_realm.value_as_string,
                 "KEYCLOAK_CLIENT_ID": keycloak_client_id.value_as_string,
-                "KEYCLOAK_USERNAME": keycloak_username.value_as_string,
-                "KEYCLOAK_PASSWORD": keycloak_password.value_as_string,
                 "RESTRACKIT_BASE_URL": restrackit_base_url.value_as_string,
                 "TENANTS_TABLE_NAME": tenants_table.table_name,
             },
         )
         tenants_table.grant_read_data(fn)
+        fn.add_to_role_policy(
+            iam.PolicyStatement(
+                actions=["secretsmanager:GetSecretValue"],
+                resources=[
+                    f"arn:aws:secretsmanager:{self.region}:{self.account}:secret:pantry-mcp/tenants/*"
+                ],
+            )
+        )
 
         http_api = apigwv2.HttpApi(
             self,

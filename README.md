@@ -48,9 +48,19 @@ and it reasons over `get_pantry_status` in the conversation.
 
 A single deployment of this server can serve any number of independent
 restrackit-core stores, each isolated from the others: one Lambda, one API
-Gateway endpoint, no per-store infrastructure to provision. Isolation is
-enforced by a DynamoDB registry (`PantryMcpTenants`) that maps each caller's
-bearer token to their own `store_id` — see `pantry_mcp/tenants.py` and
+Gateway endpoint, no per-store infrastructure to provision. Each tenant
+authenticates with **their own** Keycloak account (created by
+restrackit-core's onboarding flow) — pantry-mcp holds no shared credential
+that can address every store, so a routing bug here can misdirect a
+request to the wrong store, but it can never authenticate as a different
+tenant's account. Isolation is enforced by two per-tenant records, both
+keyed by `store_id`:
+- a DynamoDB entry (`PantryMcpTenants`) mapping the tenant's bearer token to
+  their `store_id`;
+- a Secrets Manager secret (`pantry-mcp/tenants/<store_id>`) holding that
+  tenant's own Keycloak username/password.
+
+See `pantry_mcp/tenants.py`, `pantry_mcp/credentials.py`, and
 `docs/superpowers/specs/2026-09-23-multi-tenant-design.md` for the design
 rationale.
 
@@ -63,35 +73,31 @@ rationale.
    curl -X POST https://api.restrackit.example.com/v1/onboarding/stores \
      -H "Authorization: Bearer <admin token>" \
      -H "Content-Type: application/json" \
-     -d '{"store_name": "<store name>", "manager": {"username": "restrackit-pantry-mcp", "email": "<unique email>"}}'
+     -d '{"store_name": "<store name>", "manager": {"username": "<tenant-username>", "email": "<unique email>"}}'
    ```
 
    Use a unique email per tenant — Keycloak rejects duplicates. Note down
-   the returned `store_id`.
+   the returned `store_id` and the response's `temporary_password`.
 
-   This call also creates a per-store `manager` account (with a
-   `temporary_password` in the response) as a byproduct of onboarding. That
-   account is **not** used by pantry-mcp — it belongs to restrackit-core's
-   own admin/manager UI, should the tenant ever log into that directly.
-   Ignore it for pantry-mcp purposes.
+   This is the account pantry-mcp will use **for this tenant only**. Unlike
+   a shared admin account, it has no access to any other store.
 
-2. pantry-mcp itself never touches the per-store `manager` account above.
-   It uses one shared `ADMIN_ALL` service account, configured once for the
-   whole deployment (not per tenant), which can address any store via the
-   `X-Target-Store` header. That shared account's own `temporary_password`
-   needed a one-time interactive login to become permanent when the
-   deployment was first set up — this step is not repeated when onboarding
-   additional tenants.
+2. The returned password is temporary (`UPDATE_PASSWORD` required action) —
+   password grant rejects it as-is. Log in once interactively (e.g. via
+   restrackit-core's own login flow) as `<tenant-username>` to set a
+   permanent password. This one-time step is per tenant, not per
+   deployment.
 
-3. Generate a token and register the tenant in the tenants table:
+3. Generate a bearer token and register the tenant — this writes both the
+   DynamoDB entry and the Secrets Manager secret:
 
    ```bash
    TOKEN=$(python -c "import secrets; print(secrets.token_urlsafe(32))")
-   python scripts/add_tenant.py "<tenant name>" <store_id> "$TOKEN"
+   python scripts/add_tenant.py "<tenant name>" <store_id> "$TOKEN" "<tenant-username>" "<permanent-password>"
    ```
 
-4. Give the tenant the `ApiUrl` (from the CDK output) and their token to
-   register as a Custom Connector in Claude (Desktop/mobile).
+4. Give the tenant the `ApiUrl` (from the CDK output) and their bearer
+   token to register as a Custom Connector in Claude (Desktop/mobile).
 
 ## Deployment
 
@@ -105,8 +111,6 @@ cdk deploy \
   --parameters KeycloakUrl=... \
   --parameters KeycloakRealm=... \
   --parameters KeycloakClientId=... \
-  --parameters KeycloakUsername=... \
-  --parameters KeycloakPassword=... \
   --parameters RestrackitBaseUrl=...
 ```
 

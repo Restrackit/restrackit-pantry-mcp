@@ -27,7 +27,12 @@ async def test_full_purchase_status_consumption_cycle():
     """Exercise add_purchase -> get_pantry_status -> record_consumption end to end."""
     settings = get_settings()
     store_id = int(os.environ["RESTRACKIT_TEST_STORE_ID"])
-    client = RestrackitClient(settings, TokenProvider(settings), store_id=store_id)
+    provider = TokenProvider(
+        settings,
+        os.environ["RESTRACKIT_TEST_KEYCLOAK_USERNAME"],
+        os.environ["RESTRACKIT_TEST_KEYCLOAK_PASSWORD"],
+    )
+    client = RestrackitClient(settings, provider, store_id=store_id)
     product_name = "Test Pasta Integrazione"
 
     await add_purchase(

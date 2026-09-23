@@ -15,7 +15,7 @@ dependencies = [
 ]
 
 [project.optional-dependencies]
-dev = ["pytest>=8", "pytest-asyncio>=0.24", "respx>=0.21", "ruff>=0.15", "moto[dynamodb]>=5"]
+dev = ["pytest>=8", "pytest-asyncio>=0.24", "respx>=0.21", "ruff>=0.15", "moto[dynamodb,secretsmanager]>=5"]
 
 [tool.setuptools.packages.find]
 include = ["pantry_mcp*"]

@@ -1,3 +1,5 @@
+import json
+
 import boto3
 import pytest
 import respx
@@ -6,6 +8,7 @@ from moto import mock_aws
 from starlette.testclient import TestClient
 
 from pantry_mcp import server
+from pantry_mcp.credentials import secret_name
 from pantry_mcp.tenants import hash_token
 
 TABLE_NAME = "PantryMcpTenants"
@@ -16,11 +19,19 @@ def _settings_env(monkeypatch):
     monkeypatch.setenv("KEYCLOAK_URL", "https://kc.example.com")
     monkeypatch.setenv("KEYCLOAK_REALM", "restrackit")
     monkeypatch.setenv("KEYCLOAK_CLIENT_ID", "restrackit-core")
-    monkeypatch.setenv("KEYCLOAK_USERNAME", "restrackit-pantry-mcp")
-    monkeypatch.setenv("KEYCLOAK_PASSWORD", "secret")
     monkeypatch.setenv("RESTRACKIT_BASE_URL", "https://api.example.com/v1")
     monkeypatch.setenv("TENANTS_TABLE_NAME", TABLE_NAME)
     monkeypatch.setenv("AWS_DEFAULT_REGION", "eu-west-1")
+
+
+@pytest.fixture(autouse=True)
+def _reset_token_providers():
+    """`server._token_providers` is a module-level cache — clear it so a
+    TokenProvider (and its cached token) from one test never leaks into the
+    next test's differently-mocked AWS/Keycloak backends."""
+    server._token_providers.clear()
+    yield
+    server._token_providers.clear()
 
 
 @pytest.fixture(autouse=True)
@@ -51,6 +62,14 @@ def _tenants_table():
                 "name": {"S": "Marco"},
             },
         )
+
+        secretsmanager = boto3.client("secretsmanager", region_name="eu-west-1")
+        for store_id, username in ((1, "luca-user"), (2, "marco-user")):
+            secretsmanager.create_secret(
+                Name=secret_name(store_id),
+                SecretString=json.dumps({"username": username, "password": "irrelevant"}),
+            )
+
         yield client
 
 

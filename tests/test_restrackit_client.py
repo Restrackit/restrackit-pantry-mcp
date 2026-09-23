@@ -17,8 +17,6 @@ def _settings() -> Settings:
         keycloak_url="https://kc.example.com",
         keycloak_realm="restrackit",
         keycloak_client_id="restrackit-core",
-        keycloak_username="restrackit-pantry-mcp",
-        keycloak_password="secret",
         restrackit_base_url="https://api.example.com/v1",
         tenants_table_name="PantryMcpTenants",
     )
