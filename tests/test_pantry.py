@@ -2,7 +2,12 @@ from unittest.mock import AsyncMock
 
 import pytest
 
-from pantry_mcp.pantry import add_purchase, get_pantry_status, record_consumption
+from pantry_mcp.pantry import (
+    add_purchase,
+    get_expiring_items,
+    get_pantry_status,
+    record_consumption,
+)
 
 
 async def test_add_purchase_creates_one_batch_per_unit():
@@ -68,6 +73,23 @@ async def test_record_consumption_reports_shortfall():
 
     assert client.complete_batch.await_count == 1
     assert result == {"closed": 1, "missing": 2}
+
+
+async def test_get_expiring_items_sorts_by_expiry_date_ascending():
+    client = AsyncMock()
+    client.list_open_batches.return_value = [
+        {"product_name": "Latte", "expiry_date": "2026-10-05"},
+        {"product_name": "Pasta", "expiry_date": "2027-01-01"},
+        {"product_name": "Yogurt", "expiry_date": "2026-09-25"},
+    ]
+
+    items = await get_expiring_items(client)
+
+    assert items == [
+        {"product_name": "Yogurt", "expiry_date": "2026-09-25"},
+        {"product_name": "Latte", "expiry_date": "2026-10-05"},
+        {"product_name": "Pasta", "expiry_date": "2027-01-01"},
+    ]
 
 
 @pytest.mark.parametrize("quantity", [0, -1])

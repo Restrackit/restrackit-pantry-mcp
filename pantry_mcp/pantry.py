@@ -66,6 +66,17 @@ async def get_pantry_status(
     return dict(counts)
 
 
+async def get_expiring_items(client: RestrackitClient) -> list[dict[str, Any]]:
+    """Return open batches sorted by expiry date, soonest first."""
+    batches = await client.list_open_batches()
+    items = [
+        {"product_name": batch["product_name"], "expiry_date": batch["expiry_date"]}
+        for batch in batches
+    ]
+    items.sort(key=lambda item: item["expiry_date"])
+    return items
+
+
 async def record_consumption(
     client: RestrackitClient, product_name: str, quantity: int
 ) -> dict[str, Any]:

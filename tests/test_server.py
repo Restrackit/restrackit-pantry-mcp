@@ -92,7 +92,12 @@ def test_mcp_handshake_lists_all_tools():
 
     assert list_response.status_code == 200
     tool_names = {tool["name"] for tool in list_response.json()["result"]["tools"]}
-    assert tool_names == {"add_purchase", "get_pantry_status", "record_consumption"}
+    assert tool_names == {
+        "add_purchase",
+        "get_pantry_status",
+        "record_consumption",
+        "get_expiring_items",
+    }
 
 
 def test_lambda_handler_wraps_health_check():

@@ -54,6 +54,12 @@ async def record_consumption(product_name: str, quantity: int) -> dict[str, Any]
     return await pantry.record_consumption(_get_client(), product_name, quantity)
 
 
+@mcp.tool()
+async def get_expiring_items() -> list[dict[str, Any]]:
+    """Return open batches sorted by expiry date, soonest first."""
+    return await pantry.get_expiring_items(_get_client())
+
+
 class _BearerAuthMiddleware(BaseHTTPMiddleware):
     """Require a valid bearer token on every route except ``/health``."""
 
