@@ -68,4 +68,4 @@ class PantryMcpStack(Stack):
         )
 
         CfnOutput(self, "ApiUrl", description="Public URL of the MCP server", value=http_api.api_endpoint)
-        CfnOutput(self, "TenantsTableName", description="DynamoDB table for friend tokens", value=tenants_table.table_name)
+        CfnOutput(self, "TenantsTableName", description="DynamoDB table for tenant tokens", value=tenants_table.table_name)

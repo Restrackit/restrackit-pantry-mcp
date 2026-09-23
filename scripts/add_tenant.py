@@ -1,4 +1,4 @@
-"""Register a friend in the PantryMcpTenants DynamoDB table.
+"""Register a tenant in the PantryMcpTenants DynamoDB table.
 
 Usage:
     python scripts/add_tenant.py <name> <store_id> <token>
@@ -37,7 +37,7 @@ def main() -> None:
         },
     )
     print(f"Registered {name!r} (store_id={store_id}) in {table_name}.")
-    print(f"Give them this bearer token (shown once, not stored anywhere): {token}")
+    print(f"Give the tenant this bearer token (shown once, not stored anywhere): {token}")
 
 
 if __name__ == "__main__":

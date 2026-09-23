@@ -44,44 +44,54 @@ restrackit-core REST API
 There's no dedicated "shopping list" tool — ask Claude what you're low on
 and it reasons over `get_pantry_status` in the conversation.
 
-## One-time setup (per friend)
+## Multi-tenancy
 
-1. Create their "Home" store on restrackit-core (requires an `ADMIN_ALL`
+A single deployment of this server can serve any number of independent
+restrackit-core stores, each isolated from the others: one Lambda, one API
+Gateway endpoint, no per-store infrastructure to provision. Isolation is
+enforced by a DynamoDB registry (`PantryMcpTenants`) that maps each caller's
+bearer token to their own `store_id` — see `pantry_mcp/tenants.py` and
+`docs/superpowers/specs/2026-09-23-multi-tenant-design.md` for the design
+rationale.
+
+## One-time setup (per tenant)
+
+1. Create the tenant's store on restrackit-core (requires an `ADMIN_ALL`
    account):
 
    ```bash
    curl -X POST https://api.restrackit.example.com/v1/onboarding/stores \
      -H "Authorization: Bearer <admin token>" \
      -H "Content-Type: application/json" \
-     -d '{"store_name": "Casa di Marco", "manager": {"username": "restrackit-pantry-mcp", "email": "friend@example.com"}}'
+     -d '{"store_name": "<store name>", "manager": {"username": "restrackit-pantry-mcp", "email": "<unique email>"}}'
    ```
 
-   Use a unique email per friend — Keycloak rejects duplicates. Note down
+   Use a unique email per tenant — Keycloak rejects duplicates. Note down
    the returned `store_id`.
 
    This call also creates a per-store `manager` account (with a
    `temporary_password` in the response) as a byproduct of onboarding. That
    account is **not** used by pantry-mcp — it belongs to restrackit-core's
-   own admin/manager UI, if the friend ever logs into that directly. Ignore
-   it for pantry-mcp purposes.
+   own admin/manager UI, should the tenant ever log into that directly.
+   Ignore it for pantry-mcp purposes.
 
 2. pantry-mcp itself never touches the per-store `manager` account above.
    It uses one shared `ADMIN_ALL` service account, configured once for the
-   whole deployment (not per friend), which can address any store via the
+   whole deployment (not per tenant), which can address any store via the
    `X-Target-Store` header. That shared account's own `temporary_password`
    needed a one-time interactive login to become permanent when the
    deployment was first set up — this step is not repeated when onboarding
-   additional friends.
+   additional tenants.
 
-3. Generate a token and register them in the tenants table:
+3. Generate a token and register the tenant in the tenants table:
 
    ```bash
    TOKEN=$(python -c "import secrets; print(secrets.token_urlsafe(32))")
-   python scripts/add_tenant.py "Marco" <store_id> "$TOKEN"
+   python scripts/add_tenant.py "<tenant name>" <store_id> "$TOKEN"
    ```
 
-4. Give them the `ApiUrl` (from the CDK output) and their token to register
-   as a Custom Connector in Claude (Desktop/mobile).
+4. Give the tenant the `ApiUrl` (from the CDK output) and their token to
+   register as a Custom Connector in Claude (Desktop/mobile).
 
 ## Deployment
 
@@ -100,7 +110,7 @@ cdk deploy \
   --parameters RestrackitBaseUrl=...
 ```
 
-Take the `ApiUrl` output for friends' connector URLs, and `TenantsTableName`
+Take the `ApiUrl` output for tenants' connector URLs, and `TenantsTableName`
 for use with `scripts/add_tenant.py`.
 
 ## Development

@@ -1,6 +1,6 @@
-"""Tenant registry: resolves a friend's bearer token to their restrackit-core store.
+"""Tenant registry: resolves a caller's bearer token to their restrackit-core store.
 
-DynamoDB is the source of truth so a new friend can be onboarded with a
+DynamoDB is the source of truth so a new tenant can be onboarded with a
 single ``put-item`` (see ``scripts/add_tenant.py``) and no redeploy. Lookup
 failures (unknown token, unreachable table) both resolve to ``None`` —
 the caller (the auth middleware) turns that into a uniform 401, so a
@@ -16,7 +16,7 @@ from pydantic import BaseModel
 
 
 class Tenant(BaseModel):
-    """A single friend's identity: which restrackit-core store they own."""
+    """A single tenant's identity: which restrackit-core store they own."""
 
     store_id: int
     name: str
