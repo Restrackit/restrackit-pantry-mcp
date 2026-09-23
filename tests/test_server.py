@@ -25,6 +25,19 @@ def test_health_check_requires_no_auth():
     assert response.json() == {"status": "ok"}
 
 
+def test_mcp_endpoint_allows_cors_preflight_without_auth():
+    """Connector clients probe with an unauthenticated OPTIONS preflight first."""
+    client = TestClient(server.app)
+
+    response = client.options(
+        "/mcp",
+        headers={"Origin": "https://claude.ai", "Access-Control-Request-Method": "POST"},
+    )
+
+    assert response.status_code == 200
+    assert response.headers["access-control-allow-origin"] == "*"
+
+
 def test_mcp_endpoint_rejects_missing_bearer_token():
     client = TestClient(server.app)
 

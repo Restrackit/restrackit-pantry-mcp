@@ -11,6 +11,7 @@ from typing import Any
 from mcp.server.mcpserver import MCPServer
 from mcp.server.transport_security import TransportSecuritySettings
 from starlette.middleware.base import BaseHTTPMiddleware
+from starlette.middleware.cors import CORSMiddleware
 from starlette.requests import Request
 from starlette.responses import JSONResponse
 
@@ -58,7 +59,7 @@ class _BearerAuthMiddleware(BaseHTTPMiddleware):
 
     async def dispatch(self, request: Request, call_next):
         """Reject requests missing or mismatching the configured bearer token."""
-        if request.url.path == "/health":
+        if request.url.path == "/health" or request.method == "OPTIONS":
             return await call_next(request)
 
         expected = f"Bearer {get_settings().mcp_auth_token}"
@@ -88,6 +89,12 @@ def create_app():
         ),
     )
     new_app.add_middleware(_BearerAuthMiddleware)
+    new_app.add_middleware(
+        CORSMiddleware,
+        allow_origins=["*"],
+        allow_methods=["*"],
+        allow_headers=["*"],
+    )
     new_app.add_route("/health", health)
     return new_app
 
