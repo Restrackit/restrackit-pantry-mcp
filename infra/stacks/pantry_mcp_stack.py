@@ -67,9 +67,21 @@ class PantryMcpStack(Stack):
         http_api = apigwv2.HttpApi(
             self,
             "PantryMcpApi",
+            create_default_stage=False,
             default_integration=apigwv2_integrations.HttpLambdaIntegration(
                 "PantryMcpIntegration", fn
             ),
+        )
+        # Caps runaway cost from a request flood (Lambda/API Gateway/DynamoDB
+        # billing scale with request volume): 20 req/s steady-state, burst
+        # to 40, comfortably above real usage at this deployment's scale.
+        apigwv2.HttpStage(
+            self,
+            "PantryMcpStage",
+            http_api=http_api,
+            stage_name="$default",
+            auto_deploy=True,
+            throttle=apigwv2.ThrottleSettings(rate_limit=20, burst_limit=40),
         )
 
         CfnOutput(self, "ApiUrl", description="Public URL of the MCP server", value=http_api.api_endpoint)
