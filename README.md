@@ -44,34 +44,60 @@ restrackit-core REST API
 There's no dedicated "shopping list" tool — ask Claude what you're low on
 and it reasons over `get_pantry_status` in the conversation.
 
-## One-time setup
+## Multi-tenancy
 
-1. Create the "Home" store on restrackit-core (requires an `ADMIN_ALL`
+A single deployment of this server can serve any number of independent
+restrackit-core stores, each isolated from the others: one Lambda, one API
+Gateway endpoint, no per-store infrastructure to provision. Each tenant
+authenticates with **their own** Keycloak account (created by
+restrackit-core's onboarding flow) — pantry-mcp holds no shared credential
+that can address every store, so a routing bug here can misdirect a
+request to the wrong store, but it can never authenticate as a different
+tenant's account. Isolation is enforced by two per-tenant records, both
+keyed by `store_id`:
+- a DynamoDB entry (`PantryMcpTenants`) mapping the tenant's bearer token to
+  their `store_id`;
+- a Secrets Manager secret (`pantry-mcp/tenants/<store_id>`) holding that
+  tenant's own Keycloak username/password.
+
+See `pantry_mcp/tenants.py`, `pantry_mcp/credentials.py`, and
+`docs/superpowers/specs/2026-09-23-multi-tenant-design.md` for the design
+rationale.
+
+## One-time setup (per tenant)
+
+1. Create the tenant's store on restrackit-core (requires an `ADMIN_ALL`
    account):
 
    ```bash
    curl -X POST https://api.restrackit.example.com/v1/onboarding/stores \
      -H "Authorization: Bearer <admin token>" \
      -H "Content-Type: application/json" \
-     -d '{"store_name": "Home", "manager": {"username": "restrackit-pantry-mcp", "email": "you@example.com"}}'
+     -d '{"store_name": "<store name>", "manager": {"username": "<tenant-username>", "email": "<unique email>"}}'
    ```
 
-   Note down the returned `store_id` and `temporary_password`.
+   Use a unique email per tenant — Keycloak rejects duplicates. Note down
+   the returned `store_id` and the response's `temporary_password`.
 
-2. No manual Keycloak step is needed here — the onboarding call in step 1
-   already assigned the `manager` realm role and set `temporary_password`.
-   That password is *temporary* (Keycloak's `UPDATE_PASSWORD` required
-   action), so it can't be used with `TokenProvider`'s password-grant flow
-   as-is: log in interactively once to set a permanent password (or have an
-   admin reset it via the Keycloak admin console / `kcadm.sh`), otherwise
-   the server will fail to authenticate.
+   This is the account pantry-mcp will use **for this tenant only**. Unlike
+   a shared admin account, it has no access to any other store.
 
-3. Copy `.env.example` to `.env` and fill in every value, including the
-   `store_id` from step 1.
+2. The returned password is temporary (`UPDATE_PASSWORD` required action) —
+   password grant rejects it as-is. Log in once interactively (e.g. via
+   restrackit-core's own login flow) as `<tenant-username>` to set a
+   permanent password. This one-time step is per tenant, not per
+   deployment.
 
-4. Run `python scripts/setup_catalog.py` to pre-populate a few starter
-   categories and storage methods (optional — `add_purchase` creates
-   anything missing on demand anyway).
+3. Generate a bearer token and register the tenant — this writes both the
+   DynamoDB entry and the Secrets Manager secret:
+
+   ```bash
+   TOKEN=$(python -c "import secrets; print(secrets.token_urlsafe(32))")
+   python scripts/add_tenant.py "<tenant name>" <store_id> "$TOKEN" "<tenant-username>" "<permanent-password>"
+   ```
+
+4. Give the tenant the `ApiUrl` (from the CDK output) and their bearer
+   token to register as a Custom Connector in Claude (Desktop/mobile).
 
 ## Deployment
 
@@ -85,16 +111,11 @@ cdk deploy \
   --parameters KeycloakUrl=... \
   --parameters KeycloakRealm=... \
   --parameters KeycloakClientId=... \
-  --parameters KeycloakUsername=... \
-  --parameters KeycloakPassword=... \
-  --parameters RestrackitBaseUrl=... \
-  --parameters RestrackitStoreId=... \
-  --parameters McpAuthToken=...
+  --parameters RestrackitBaseUrl=...
 ```
 
-Take the `ApiUrl` from the output and register it as a Custom Connector in
-Claude (Desktop/mobile), using the value of `MCP_AUTH_TOKEN` as its bearer
-token.
+Take the `ApiUrl` output for tenants' connector URLs, and `TenantsTableName`
+for use with `scripts/add_tenant.py`.
 
 ## Development
 

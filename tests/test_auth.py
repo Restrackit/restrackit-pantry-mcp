@@ -10,11 +10,8 @@ def _settings() -> Settings:
         keycloak_url="https://kc.example.com",
         keycloak_realm="restrackit",
         keycloak_client_id="restrackit-core",
-        keycloak_username="restrackit-pantry-mcp",
-        keycloak_password="secret",
         restrackit_base_url="https://api.example.com/v1",
-        restrackit_store_id=1,
-        mcp_auth_token="token123",
+        tenants_table_name="PantryMcpTenants",
     )
 
 
@@ -22,22 +19,33 @@ def _settings() -> Settings:
 async def test_get_token_fetches_and_returns_access_token():
     route = respx.post(
         "https://kc.example.com/realms/restrackit/protocol/openid-connect/token"
-    ).mock(return_value=httpx.Response(200, json={"access_token": "abc", "expires_in": 300}))
+    ).mock(
+        return_value=httpx.Response(
+            200, json={"access_token": "abc", "expires_in": 300}
+        )
+    )
 
-    provider = TokenProvider(_settings())
+    provider = TokenProvider(_settings(), "tenant-user", "tenant-pass")
     token = await provider.get_token()
 
     assert token == "abc"
     assert route.called
+    sent = route.calls.last.request
+    assert "username=tenant-user" in sent.content.decode()
+    assert "password=tenant-pass" in sent.content.decode()
 
 
 @respx.mock
 async def test_get_token_uses_cache_before_expiry():
     route = respx.post(
         "https://kc.example.com/realms/restrackit/protocol/openid-connect/token"
-    ).mock(return_value=httpx.Response(200, json={"access_token": "abc", "expires_in": 300}))
+    ).mock(
+        return_value=httpx.Response(
+            200, json={"access_token": "abc", "expires_in": 300}
+        )
+    )
 
-    provider = TokenProvider(_settings())
+    provider = TokenProvider(_settings(), "tenant-user", "tenant-pass")
     await provider.get_token()
     await provider.get_token()
 
@@ -55,7 +63,7 @@ async def test_get_token_refetches_after_expiry():
         ]
     )
 
-    provider = TokenProvider(_settings())
+    provider = TokenProvider(_settings(), "tenant-user", "tenant-pass")
     first = await provider.get_token()
     second = await provider.get_token()
 

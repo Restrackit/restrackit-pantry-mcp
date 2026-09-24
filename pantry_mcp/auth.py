@@ -6,8 +6,18 @@ from pantry_mcp.config import Settings
 
 
 class TokenProvider:
-    def __init__(self, settings: Settings) -> None:
+    """Logs in as one specific Keycloak account (password grant) and caches its token.
+
+    Takes the account's own username/password explicitly rather than reading
+    a single global credential: each tenant authenticates as their own
+    Keycloak account, so a routing bug here can never authenticate as a
+    different tenant.
+    """
+
+    def __init__(self, settings: Settings, username: str, password: str) -> None:
         self._settings = settings
+        self._username = username
+        self._password = password
         self._token: str | None = None
         self._expires_at: float = 0.0
 
@@ -22,8 +32,8 @@ class TokenProvider:
         data = {
             "grant_type": "password",
             "client_id": self._settings.keycloak_client_id,
-            "username": self._settings.keycloak_username,
-            "password": self._settings.keycloak_password,
+            "username": self._username,
+            "password": self._password,
         }
         async with httpx.AsyncClient() as client:
             response = await client.post(url, data=data)

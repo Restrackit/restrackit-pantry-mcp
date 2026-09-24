@@ -29,9 +29,10 @@ STORAGE_METHOD_DEFAULT_DURATION_DAYS = {
 
 
 class RestrackitClient:
-    def __init__(self, settings: Settings, token_provider: _TokenSource) -> None:
+    def __init__(self, settings: Settings, token_provider: _TokenSource, store_id: int) -> None:
         self._settings = settings
         self._token_provider = token_provider
+        self._store_id = store_id
 
     async def request(
         self,
@@ -45,7 +46,7 @@ class RestrackitClient:
         token = await self._token_provider.get_token()
         request_headers = {
             "Authorization": f"Bearer {token}",
-            "X-Target-Store": str(self._settings.restrackit_store_id),
+            "X-Target-Store": str(self._store_id),
             **(headers or {}),
         }
         url = f"{self._settings.restrackit_base_url}{path}"

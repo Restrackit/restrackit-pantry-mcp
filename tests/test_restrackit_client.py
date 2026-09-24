@@ -17,11 +17,8 @@ def _settings() -> Settings:
         keycloak_url="https://kc.example.com",
         keycloak_realm="restrackit",
         keycloak_client_id="restrackit-core",
-        keycloak_username="restrackit-pantry-mcp",
-        keycloak_password="secret",
         restrackit_base_url="https://api.example.com/v1",
-        restrackit_store_id=42,
-        mcp_auth_token="token123",
+        tenants_table_name="PantryMcpTenants",
     )
 
 
@@ -35,7 +32,7 @@ async def test_request_injects_auth_and_store_header():
     route = respx.get("https://api.example.com/v1/categories").mock(
         return_value=httpx.Response(200, json=[])
     )
-    client = RestrackitClient(_settings(), _FakeTokenProvider())
+    client = RestrackitClient(_settings(), _FakeTokenProvider(), store_id=42)
 
     await client.request("GET", "/categories")
 
@@ -52,7 +49,7 @@ async def test_request_raises_on_error_body():
             json={"error": {"code": "ERR_BUS_004", "message": "già esiste"}},
         )
     )
-    client = RestrackitClient(_settings(), _FakeTokenProvider())
+    client = RestrackitClient(_settings(), _FakeTokenProvider(), store_id=42)
 
     with pytest.raises(RestrackitApiError) as exc_info:
         await client.request("POST", "/categories", json={"name": "pulizia"})
@@ -79,7 +76,7 @@ async def test_ensure_category_skips_if_already_present():
         )
     )
     create_route = respx.post("https://api.example.com/v1/categories")
-    client = RestrackitClient(_settings(), _FakeTokenProvider())
+    client = RestrackitClient(_settings(), _FakeTokenProvider(), store_id=42)
 
     await client.ensure_category("Pulizia")
 
@@ -103,7 +100,7 @@ async def test_ensure_category_creates_if_missing():
             },
         )
     )
-    client = RestrackitClient(_settings(), _FakeTokenProvider())
+    client = RestrackitClient(_settings(), _FakeTokenProvider(), store_id=42)
 
     await client.ensure_category("Pulizia")
 
@@ -138,7 +135,7 @@ async def test_ensure_product_bulk_loads_then_resolves_public_id():
             },
         )
     )
-    client = RestrackitClient(_settings(), _FakeTokenProvider())
+    client = RestrackitClient(_settings(), _FakeTokenProvider(), store_id=42)
 
     public_id = await client.ensure_product("Pasta di semola", "pasta")
 
@@ -156,7 +153,7 @@ async def test_ensure_product_raises_if_not_found_after_load():
     respx.get("https://api.example.com/v1/products/list", params={"category": "pasta"}).mock(
         return_value=httpx.Response(200, json={"items": []})
     )
-    client = RestrackitClient(_settings(), _FakeTokenProvider())
+    client = RestrackitClient(_settings(), _FakeTokenProvider(), store_id=42)
 
     with pytest.raises(LookupError):
         await client.ensure_product("Pasta di semola", "pasta")
@@ -167,7 +164,7 @@ async def test_ensure_storage_rule_creates_with_default_duration():
     route = respx.post(
         "https://api.example.com/v1/products/22222222-2222-2222-2222-222222222222/storage-rules"
     ).mock(return_value=httpx.Response(201, json={"public_id": "1"}))
-    client = RestrackitClient(_settings(), _FakeTokenProvider())
+    client = RestrackitClient(_settings(), _FakeTokenProvider(), store_id=42)
 
     await client.ensure_storage_rule(
         "22222222-2222-2222-2222-222222222222",
@@ -193,7 +190,7 @@ async def test_ensure_storage_rule_ignores_already_exists():
             409, json={"error": {"code": "ERR_BUS_004", "message": "già esiste"}}
         )
     )
-    client = RestrackitClient(_settings(), _FakeTokenProvider())
+    client = RestrackitClient(_settings(), _FakeTokenProvider(), store_id=42)
 
     await client.ensure_storage_rule(
         "22222222-2222-2222-2222-222222222222",
@@ -207,7 +204,7 @@ async def test_ensure_storage_rule_uses_generic_default_for_unknown_storage_meth
     route = respx.post(
         "https://api.example.com/v1/products/22222222-2222-2222-2222-222222222222/storage-rules"
     ).mock(return_value=httpx.Response(201, json={"public_id": "1"}))
-    client = RestrackitClient(_settings(), _FakeTokenProvider())
+    client = RestrackitClient(_settings(), _FakeTokenProvider(), store_id=42)
 
     await client.ensure_storage_rule(
         "22222222-2222-2222-2222-222222222222",
@@ -239,7 +236,7 @@ async def test_get_storage_method_public_id_matches_case_insensitive():
             ],
         )
     )
-    client = RestrackitClient(_settings(), _FakeTokenProvider())
+    client = RestrackitClient(_settings(), _FakeTokenProvider(), store_id=42)
 
     public_id = await client.get_storage_method_public_id("Frigo")
 
@@ -251,7 +248,7 @@ async def test_confirm_batch_sends_expected_payload_and_idempotency_key():
     route = respx.post("https://api.example.com/v1/inventory/confirm").mock(
         return_value=httpx.Response(201, json={"status": "ok", "public_id": "b1"})
     )
-    client = RestrackitClient(_settings(), _FakeTokenProvider())
+    client = RestrackitClient(_settings(), _FakeTokenProvider(), store_id=42)
 
     result = await client.confirm_batch(
         "Pasta di semola", "44444444-4444-4444-4444-444444444444", "2027-01-01", "20260922-abc-0"
@@ -286,7 +283,7 @@ async def test_list_open_batches_follows_pagination():
             ),
         ]
     )
-    client = RestrackitClient(_settings(), _FakeTokenProvider())
+    client = RestrackitClient(_settings(), _FakeTokenProvider(), store_id=42)
 
     items = await client.list_open_batches("Pasta")
 
@@ -301,7 +298,7 @@ async def test_complete_batch_sends_reason_and_version():
     route = respx.post("https://api.example.com/v1/inventory/batch/b1/complete").mock(
         return_value=httpx.Response(200, json={"status": "ok", "public_id": "b1", "is_empty": True})
     )
-    client = RestrackitClient(_settings(), _FakeTokenProvider())
+    client = RestrackitClient(_settings(), _FakeTokenProvider(), store_id=42)
 
     result = await client.complete_batch("b1", version=3, reason="other")
 
