@@ -9,6 +9,7 @@ class Settings(BaseSettings):
     keycloak_connector_client_id: str
     keycloak_exchange_client_id: str
     keycloak_exchange_client_secret: str
+    restrackit_backend_client_id: str
     restrackit_base_url: str
 
 
