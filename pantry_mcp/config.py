@@ -1,8 +1,8 @@
 from functools import lru_cache
 
 import boto3
-from pydantic_settings import BaseSettings
 from pydantic import model_validator
+from pydantic_settings import BaseSettings
 
 
 class Settings(BaseSettings):
