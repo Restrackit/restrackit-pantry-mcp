@@ -24,4 +24,5 @@ include = ["pantry_mcp*"]
 [tool.pytest.ini_options]
 asyncio_mode = "auto"
 testpaths = ["tests"]
+pythonpath = ["."]
 markers = ["integration: requires a real restrackit-core instance"]

@@ -17,33 +17,53 @@ from starlette.requests import Request
 from starlette.responses import JSONResponse
 
 from pantry_mcp import pantry
-from pantry_mcp.auth import TokenProvider
+from pantry_mcp.auth import TokenExchanger
 from pantry_mcp.config import get_settings
-from pantry_mcp.credentials import get_credential_store
+from pantry_mcp.jwks import JWTValidationError, validate_user_token
 from pantry_mcp.restrackit_client import RestrackitClient
-from pantry_mcp.tenants import Tenant, TenantStore
 
 mcp = MCPServer("restrackit-pantry-mcp")
 
-_current_tenant: ContextVar[Tenant] = ContextVar("current_tenant")
+_current_user_token: ContextVar[str] = ContextVar("current_user_token")
+_current_store_id: ContextVar[int] = ContextVar("current_store_id")
 
-# One TokenProvider per tenant, reused across requests/warm invocations so a
-# tenant's own Keycloak login is cached instead of repeated on every tool
-# call. Two concurrent first-calls for the same tenant may both build a
-# provider and race to set this entry; harmless — both are valid, one is
-# just discarded.
-_token_providers: dict[int, TokenProvider] = {}
+# Un solo TokenExchanger per processo: è stateless verso Keycloak (nessuna
+# credenziale di tenant), la sua cache interna è già chiavata per user_token
+# (Task 4), quindi condividerlo tra richieste è sicuro e riusa la cache.
+# Costruito lazy (non al momento dell'import) perché Settings richiede env var
+# che nei test vengono impostate da una fixture per-test, dopo che il modulo
+# è già stato importato una volta dal collector di pytest.
+_exchanger: TokenExchanger | None = None
+
+
+def _get_exchanger() -> TokenExchanger:
+    """Return the process-wide TokenExchanger, creating it on first use."""
+    global _exchanger
+    if _exchanger is None:
+        _exchanger = TokenExchanger(get_settings())
+    return _exchanger
+
+
+class _TokenExchangeSource:
+    """Adatta TokenExchanger.exchange al protocollo `_TokenSource` di RestrackitClient."""
+
+    def __init__(self, exchanger: TokenExchanger, user_token: str) -> None:
+        """Store the shared exchanger and the current request's user token."""
+        self._exchanger = exchanger
+        self._user_token = user_token
+
+    async def get_token(self) -> str:
+        """Return a restrackit-backend-scoped token for the current user token."""
+        return await self._exchanger.exchange(self._user_token)
 
 
 async def _get_client() -> RestrackitClient:
+    """Build a RestrackitClient scoped to the current request's store and user token."""
     settings = get_settings()
-    tenant = _current_tenant.get()
-    provider = _token_providers.get(tenant.store_id)
-    if provider is None:
-        credentials = await get_credential_store().get(tenant.store_id)
-        provider = TokenProvider(settings, credentials.username, credentials.password)
-        _token_providers[tenant.store_id] = provider
-    return RestrackitClient(settings, provider, store_id=tenant.store_id)
+    store_id = _current_store_id.get()
+    user_token = _current_user_token.get()
+    token_source = _TokenExchangeSource(_get_exchanger(), user_token)
+    return RestrackitClient(settings, token_source, store_id=store_id)
 
 
 @mcp.tool()
@@ -78,17 +98,32 @@ async def get_expiring_items() -> list[dict[str, Any]]:
     return await pantry.get_expiring_items(await _get_client())
 
 
-class _BearerAuthMiddleware(BaseHTTPMiddleware):
-    """Resolve every request's bearer token to a tenant, or reject it.
+def _extract_store_id(payload: dict) -> int:
+    """Estrae store_id dal claim del token; solleva se mancante o non numerico.
 
-    A missing header, an unknown token, and a DynamoDB lookup failure all
-    return the same 401 — the response must never reveal which case it was,
-    otherwise a caller could enumerate valid tokens or learn the registry is
-    down.
+    Il claim è multivalued nello schema esistente (store_id_mapper in
+    restrackit-core, vedi provision_keycloak_realm.sh) — pantry-mcp-connector
+    ne assegna sempre uno solo per utente, quindi prende il primo.
+    """
+    claim = payload.get("store_id")
+    if not claim:
+        raise JWTValidationError("Missing store_id claim")
+    try:
+        return int(claim[0] if isinstance(claim, list) else claim)
+    except (TypeError, ValueError) as error:
+        raise JWTValidationError("Non-numeric store_id claim") from error
+
+
+class _BearerAuthMiddleware(BaseHTTPMiddleware):
+    """Valida il JWT utente di ogni richiesta, o la rifiuta.
+
+    Un header mancante, un JWT invalido/scaduto/con audience errata e un
+    claim store_id mancante risultano tutti nello stesso 401 — il chiamante
+    non deve poter distinguere quale caso si è verificato.
     """
 
     async def dispatch(self, request: Request, call_next):
-        """Reject requests with no bearer token or one that resolves to no tenant."""
+        """Reject requests with no bearer token or one that fails JWT validation."""
         if request.url.path == "/health" or request.method == "OPTIONS":
             return await call_next(request)
 
@@ -97,16 +132,19 @@ class _BearerAuthMiddleware(BaseHTTPMiddleware):
             return JSONResponse({"error": "unauthorized"}, status_code=401)
         token = auth_header.removeprefix("Bearer ")
 
-        tenant_store = TenantStore(get_settings().tenants_table_name)
-        tenant = await tenant_store.resolve(token)
-        if tenant is None:
+        try:
+            payload = await validate_user_token(get_settings(), token)
+            store_id = _extract_store_id(payload)
+        except JWTValidationError:
             return JSONResponse({"error": "unauthorized"}, status_code=401)
 
-        reset_token = _current_tenant.set(tenant)
+        token_reset = _current_user_token.set(token)
+        store_reset = _current_store_id.set(store_id)
         try:
             return await call_next(request)
         finally:
-            _current_tenant.reset(reset_token)
+            _current_user_token.reset(token_reset)
+            _current_store_id.reset(store_reset)
 
 
 async def health(request: Request) -> JSONResponse:
