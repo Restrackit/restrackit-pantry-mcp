@@ -27,7 +27,9 @@ def _settings() -> Settings:
         keycloak_connector_client_id="pantry-mcp-connector",
         keycloak_exchange_client_id="pantry-mcp-token-exchange",
         keycloak_exchange_client_secret="s3cr3t",
+        restrackit_backend_client_id="restrackit-backend",
         restrackit_base_url="https://api.example.com/v1",
+        mcp_public_base_url="https://pantry-mcp.example.com",
     )
 
 
@@ -71,6 +73,7 @@ async def test_validate_user_token_accepts_valid_signed_token():
     ).mock(return_value=httpx.Response(200, json={"keys": [_jwk_from_public_key(public_key, kid)]}))
 
     claims = {
+        "iss": "https://kc.example.com/realms/restrackit",
         "aud": "pantry-mcp-connector",
         "sub": "user-1",
         "store_id": ["1"],
@@ -94,6 +97,7 @@ async def test_validate_user_token_rejects_expired_token():
     ).mock(return_value=httpx.Response(200, json={"keys": [_jwk_from_public_key(public_key, kid)]}))
 
     claims = {
+        "iss": "https://kc.example.com/realms/restrackit",
         "aud": "pantry-mcp-connector",
         "sub": "user-1",
         "store_id": ["1"],
@@ -118,6 +122,7 @@ async def test_validate_user_token_rejects_wrong_audience():
     ).mock(return_value=httpx.Response(200, json={"keys": [_jwk_from_public_key(public_key, kid)]}))
 
     claims = {
+        "iss": "https://kc.example.com/realms/restrackit",
         "aud": "some-other-client",
         "sub": "user-1",
         "store_id": ["1"],
@@ -171,6 +176,7 @@ async def test_validate_user_token_refetches_jwks_on_unknown_kid():
         ]
     )
     claims = {
+        "iss": "https://kc.example.com/realms/restrackit",
         "aud": "pantry-mcp-connector",
         "sub": "user-1",
         "store_id": ["1"],
@@ -182,3 +188,53 @@ async def test_validate_user_token_refetches_jwks_on_unknown_kid():
 
     assert payload["sub"] == "user-1"
     assert route.call_count == 2
+
+
+@respx.mock
+async def test_validate_user_token_rejects_wrong_issuer():
+    """A token signed by a different realm/issuer is rejected (I1)."""
+    private_key, public_key = _make_rsa_keypair()
+    kid = "test-key-1"
+    respx.get(
+        "https://kc.example.com/realms/restrackit/protocol/openid-connect/certs"
+    ).mock(return_value=httpx.Response(200, json={"keys": [_jwk_from_public_key(public_key, kid)]}))
+
+    claims = {
+        "iss": "https://evil.example.com/realms/other",
+        "aud": "pantry-mcp-connector",
+        "sub": "user-1",
+        "store_id": ["1"],
+        "exp": int(time.time()) + 300,
+    }
+    token = _sign_token(private_key, kid, claims)
+
+    try:
+        await validate_user_token(_settings(), token)
+        raise AssertionError("expected JWTValidationError")
+    except JWTValidationError:
+        pass
+
+
+@respx.mock
+async def test_validate_user_token_rejects_token_without_aud_claim():
+    """python-jose silently skips the audience check when `aud` is absent instead
+    of rejecting the token (I1) — this must be enforced explicitly."""
+    private_key, public_key = _make_rsa_keypair()
+    kid = "test-key-1"
+    respx.get(
+        "https://kc.example.com/realms/restrackit/protocol/openid-connect/certs"
+    ).mock(return_value=httpx.Response(200, json={"keys": [_jwk_from_public_key(public_key, kid)]}))
+
+    claims = {
+        "iss": "https://kc.example.com/realms/restrackit",
+        "sub": "user-1",
+        "store_id": ["1"],
+        "exp": int(time.time()) + 300,
+    }
+    token = _sign_token(private_key, kid, claims)
+
+    try:
+        await validate_user_token(_settings(), token)
+        raise AssertionError("expected JWTValidationError")
+    except JWTValidationError:
+        pass

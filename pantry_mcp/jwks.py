@@ -60,24 +60,34 @@ async def validate_user_token(settings: Settings, token: str) -> dict:
         f"{settings.keycloak_url}/realms/{settings.keycloak_realm}"
         "/protocol/openid-connect/certs"
     )
+    issuer = f"{settings.keycloak_url}/realms/{settings.keycloak_realm}"
     try:
         jwks = await _cache.get(jwks_url)
         try:
-            return jwt.decode(
+            payload = jwt.decode(
                 token,
                 jwks,
                 algorithms=["RS256"],
                 audience=settings.keycloak_connector_client_id,
+                issuer=issuer,
             )
         except JWTError:
             # La chiave potrebbe essere ruotata: un solo retry con JWKS forzatamente
             # fresco, stesso pattern di _decode_token_with_retry in restrackit-core.
             jwks = await _cache.get(jwks_url, force_refresh=True)
-            return jwt.decode(
+            payload = jwt.decode(
                 token,
                 jwks,
                 algorithms=["RS256"],
                 audience=settings.keycloak_connector_client_id,
+                issuer=issuer,
             )
     except (JWTError, httpx.HTTPError) as error:
         raise JWTValidationError(str(error)) from error
+
+    # python-jose skips the audience check entirely when `aud` is absent from
+    # the token instead of rejecting it (jose/jwt.py `_validate_aud`), so a
+    # realm-signed token with no `aud` claim at all would otherwise pass.
+    if "aud" not in payload:
+        raise JWTValidationError("Missing aud claim")
+    return payload
