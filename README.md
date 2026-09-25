@@ -66,38 +66,20 @@ rationale.
 
 ## One-time setup (per tenant)
 
-1. Create the tenant's store on restrackit-core (requires an `ADMIN_ALL`
-   account):
+Tenants onboard via OAuth token exchange: a tenant logs in for the first
+time through the "Sign in now" button in the custom connector registered in
+Claude (Desktop/mobile). No manual provisioning steps required.
 
-   ```bash
-   curl -X POST https://api.restrackit.example.com/v1/onboarding/stores \
-     -H "Authorization: Bearer <admin token>" \
-     -H "Content-Type: application/json" \
-     -d '{"store_name": "<store name>", "manager": {"username": "<tenant-username>", "email": "<unique email>"}}'
-   ```
+1. Ensure restrackit-core has a store created for this tenant (requires an
+   `ADMIN_ALL` account). Once the store exists, the tenant is ready to
+   authenticate via the connector.
 
-   Use a unique email per tenant — Keycloak rejects duplicates. Note down
-   the returned `store_id` and the response's `temporary_password`.
-
-   This is the account pantry-mcp will use **for this tenant only**. Unlike
-   a shared admin account, it has no access to any other store.
-
-2. The returned password is temporary (`UPDATE_PASSWORD` required action) —
-   password grant rejects it as-is. Log in once interactively (e.g. via
-   restrackit-core's own login flow) as `<tenant-username>` to set a
-   permanent password. This one-time step is per tenant, not per
-   deployment.
-
-3. Generate a bearer token and register the tenant — this writes both the
-   DynamoDB entry and the Secrets Manager secret:
-
-   ```bash
-   TOKEN=$(python -c "import secrets; print(secrets.token_urlsafe(32))")
-   python scripts/add_tenant.py "<tenant name>" <store_id> "$TOKEN" "<tenant-username>" "<permanent-password>"
-   ```
-
-4. Give the tenant the `ApiUrl` (from the CDK output) and their bearer
-   token to register as a Custom Connector in Claude (Desktop/mobile).
+2. Tenant registers the custom connector in Claude:
+   - Copy the `ApiUrl` from the CDK deployment output.
+   - In Claude (Desktop/mobile), add the connector as a Custom Connector.
+   - On first use, click "Sign in now" to authorize via Keycloak.
+   - The token is exchanged server-side; no manual token provisioning is
+     required.
 
 ## Deployment
 
@@ -110,12 +92,13 @@ uv pip install --python .venv -r requirements.txt
 cdk deploy \
   --parameters KeycloakUrl=... \
   --parameters KeycloakRealm=... \
-  --parameters KeycloakClientId=... \
+  --parameters KeycloakConnectorClientId=... \
+  --parameters KeycloakExchangeClientId=... \
+  --parameters RestrackitBackendClientId=... \
   --parameters RestrackitBaseUrl=...
 ```
 
-Take the `ApiUrl` output for tenants' connector URLs, and `TenantsTableName`
-for use with `scripts/add_tenant.py`.
+Take the `ApiUrl` output for tenants' connector URLs.
 
 ## Development
 
