@@ -10,6 +10,16 @@ from constructs import Construct
 # binding (no `_lambda.Secret`), so only the secret NAME is injected as a plain env
 # var; `pantry_mcp/config.py` fetches the value once at startup via boto3. Upgrade to
 # passing the value directly if a future aws-cdk-lib adds that construct.
+#
+# This secret is NOT created by this stack (only read). It must be created
+# manually, once, as a plain string secret holding the client secret configured
+# on Keycloak's `pantry-mcp-token-exchange` client (provisioned from
+# restrackit-core, see scripts/provision_keycloak_realm.sh there). The two
+# values must match exactly — there is no automatic sync between the two
+# systems, so rotating one without the other breaks every token exchange:
+#   aws secretsmanager create-secret \
+#     --name pantry-mcp/token-exchange-client \
+#     --secret-string '<the same secret configured on the Keycloak client>'
 TOKEN_EXCHANGE_SECRET_NAME = "pantry-mcp/token-exchange-client"
 
 
@@ -23,6 +33,7 @@ class PantryMcpStack(Stack):
         keycloak_exchange_client_id = CfnParameter(self, "KeycloakExchangeClientId", type="String")
         restrackit_backend_client_id = CfnParameter(self, "RestrackitBackendClientId", type="String")
         restrackit_base_url = CfnParameter(self, "RestrackitBaseUrl", type="String")
+        mcp_public_base_url = CfnParameter(self, "McpPublicBaseUrl", type="String")
 
         fn = PythonFunction(
             self,
@@ -52,6 +63,7 @@ class PantryMcpStack(Stack):
                 "KEYCLOAK_EXCHANGE_CLIENT_SECRET_NAME": TOKEN_EXCHANGE_SECRET_NAME,
                 "RESTRACKIT_BACKEND_CLIENT_ID": restrackit_backend_client_id.value_as_string,
                 "RESTRACKIT_BASE_URL": restrackit_base_url.value_as_string,
+                "MCP_PUBLIC_BASE_URL": mcp_public_base_url.value_as_string,
             },
         )
 
