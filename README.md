@@ -48,56 +48,51 @@ and it reasons over `get_pantry_status` in the conversation.
 
 A single deployment of this server can serve any number of independent
 restrackit-core stores, each isolated from the others: one Lambda, one API
-Gateway endpoint, no per-store infrastructure to provision. Each tenant
-authenticates with **their own** Keycloak account (created by
-restrackit-core's onboarding flow) — pantry-mcp holds no shared credential
-that can address every store, so a routing bug here can misdirect a
-request to the wrong store, but it can never authenticate as a different
-tenant's account. Isolation is enforced by two per-tenant records, both
-keyed by `store_id`:
-- a DynamoDB entry (`PantryMcpTenants`) mapping the tenant's bearer token to
-  their `store_id`;
-- a Secrets Manager secret (`pantry-mcp/tenants/<store_id>`) holding that
-  tenant's own Keycloak username/password.
+Gateway endpoint, no per-store infrastructure to provision, and no tenant
+registry of any kind. Each tenant authenticates with **their own** Keycloak
+account (created by restrackit-core's onboarding flow) via the OAuth login
+flow described below — pantry-mcp holds no shared credential that can
+address every store, so a routing bug here can misdirect a request to the
+wrong store, but it can never authenticate as a different tenant's account.
 
-See `pantry_mcp/tenants.py`, `pantry_mcp/credentials.py`, and
-`docs/superpowers/specs/2026-09-23-multi-tenant-design.md` for the design
-rationale.
+Isolation is enforced per request, from the user's own access token:
+- pantry-mcp validates the token Claude sends (issued by Keycloak to
+  `pantry-mcp-connector` for that specific user) and reads the `store_id`
+  claim from it (`pantry_mcp/jwks.py`, `_extract_store_id` in
+  `pantry_mcp/server.py`);
+- it then exchanges that token server-side, via RFC 8693 Standard Token
+  Exchange, for one scoped to `restrackit-backend` (`pantry_mcp/auth.py`,
+  `TokenExchanger`) and forwards it with `X-Target-Store: <store_id>` on every
+  restrackit-core call.
+
+There is no DynamoDB table, no per-tenant Secrets Manager credential, and no
+`add_tenant.py`-style provisioning script — the only shared secret is the
+token-exchange client's own credential (see "Deployment" below).
 
 ## One-time setup (per tenant)
 
-1. Create the tenant's store on restrackit-core (requires an `ADMIN_ALL`
-   account):
+Tenants onboard via OAuth token exchange: a tenant logs in for the first
+time through the "Sign in now" button in the custom connector registered in
+Claude (Desktop/mobile). No manual provisioning steps required.
 
-   ```bash
-   curl -X POST https://api.restrackit.example.com/v1/onboarding/stores \
-     -H "Authorization: Bearer <admin token>" \
-     -H "Content-Type: application/json" \
-     -d '{"store_name": "<store name>", "manager": {"username": "<tenant-username>", "email": "<unique email>"}}'
-   ```
+1. Ensure restrackit-core has a store created for this tenant (requires an
+   `ADMIN_ALL` account). Once the store exists, the tenant is ready to
+   authenticate via the connector.
 
-   Use a unique email per tenant — Keycloak rejects duplicates. Note down
-   the returned `store_id` and the response's `temporary_password`.
-
-   This is the account pantry-mcp will use **for this tenant only**. Unlike
-   a shared admin account, it has no access to any other store.
-
-2. The returned password is temporary (`UPDATE_PASSWORD` required action) —
-   password grant rejects it as-is. Log in once interactively (e.g. via
-   restrackit-core's own login flow) as `<tenant-username>` to set a
-   permanent password. This one-time step is per tenant, not per
-   deployment.
-
-3. Generate a bearer token and register the tenant — this writes both the
-   DynamoDB entry and the Secrets Manager secret:
-
-   ```bash
-   TOKEN=$(python -c "import secrets; print(secrets.token_urlsafe(32))")
-   python scripts/add_tenant.py "<tenant name>" <store_id> "$TOKEN" "<tenant-username>" "<permanent-password>"
-   ```
-
-4. Give the tenant the `ApiUrl` (from the CDK output) and their bearer
-   token to register as a Custom Connector in Claude (Desktop/mobile).
+2. Tenant registers the custom connector in Claude:
+   - Copy the `ApiUrl` from the CDK deployment output (its `/mcp` path is the
+     MCP endpoint).
+   - In Claude (Desktop/mobile), add the connector as a Custom Connector,
+     pointing at `<ApiUrl>/mcp`.
+   - On first use, click "Sign in now". Claude discovers Keycloak
+     automatically via `GET /.well-known/oauth-protected-resource`, so no
+     redirect URI entry is needed on the tenant's side. In the connector's
+     Advanced settings, set **OAuth Client ID** to `pantry-mcp-connector`
+     (no client secret) — without it Claude falls back to Dynamic Client
+     Registration, which either fails or creates a client missing the
+     `store_id`/audience mappers this flow requires.
+   - The token is exchanged server-side; no manual token provisioning is
+     required.
 
 ## Deployment
 
@@ -110,12 +105,31 @@ uv pip install --python .venv -r requirements.txt
 cdk deploy \
   --parameters KeycloakUrl=... \
   --parameters KeycloakRealm=... \
-  --parameters KeycloakClientId=... \
-  --parameters RestrackitBaseUrl=...
+  --parameters KeycloakConnectorClientId=... \
+  --parameters KeycloakExchangeClientId=... \
+  --parameters RestrackitBackendClientId=... \
+  --parameters RestrackitBaseUrl=... \
+  --parameters McpPublicBaseUrl=...  # the ApiUrl output, no trailing slash
 ```
 
-Take the `ApiUrl` output for tenants' connector URLs, and `TenantsTableName`
-for use with `scripts/add_tenant.py`.
+Take the `ApiUrl` output for tenants' connector URLs, and pass it back in as
+`McpPublicBaseUrl` (it is only known after the first deploy — redeploy once
+with it set).
+
+Before the first deploy, create the token-exchange client secret manually,
+once:
+
+```bash
+aws secretsmanager create-secret \
+  --name pantry-mcp/token-exchange-client \
+  --secret-string '<the secret configured on Keycloak's pantry-mcp-token-exchange client>'
+```
+
+This value must be **identical** to the secret configured for the
+`pantry-mcp-token-exchange` client on the Keycloak side (provisioned from
+restrackit-core's `scripts/provision_keycloak_realm.sh`). Nothing keeps the
+two in sync automatically — rotating one without the other breaks every
+token exchange with `invalid_client`.
 
 ## Development
 

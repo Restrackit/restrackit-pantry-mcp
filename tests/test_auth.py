@@ -1,72 +1,132 @@
 import httpx
 import respx
 
-from pantry_mcp.auth import TokenProvider
+from pantry_mcp.auth import TokenExchanger
 from pantry_mcp.config import Settings
 
 
-def _settings() -> Settings:
+# Valore diverso da "restrackit-backend" di proposito: prova che l'audience
+# inviata a Keycloak proviene dalla config, non da una stringa hardcoded nel
+# codice di TokenExchanger (verificato da test_exchange_posts_token_exchange_grant
+# insieme a test_exchange_uses_configured_audience, che invece la imposta a
+# "restrackit-backend").
+def _settings(*, backend_client_id: str = "some-other-audience") -> Settings:
     return Settings(
         keycloak_url="https://kc.example.com",
         keycloak_realm="restrackit",
-        keycloak_client_id="restrackit-core",
+        keycloak_connector_client_id="pantry-mcp-connector",
+        keycloak_exchange_client_id="pantry-mcp-token-exchange",
+        keycloak_exchange_client_secret="exchanger-secret",
+        restrackit_backend_client_id=backend_client_id,
         restrackit_base_url="https://api.example.com/v1",
-        tenants_table_name="PantryMcpTenants",
+        mcp_public_base_url="https://pantry-mcp.example.com",
     )
 
 
 @respx.mock
-async def test_get_token_fetches_and_returns_access_token():
+async def test_exchange_posts_token_exchange_grant():
     route = respx.post(
         "https://kc.example.com/realms/restrackit/protocol/openid-connect/token"
     ).mock(
         return_value=httpx.Response(
-            200, json={"access_token": "abc", "expires_in": 300}
+            200, json={"access_token": "exchanged", "expires_in": 300}
         )
     )
 
-    provider = TokenProvider(_settings(), "tenant-user", "tenant-pass")
-    token = await provider.get_token()
+    exchanger = TokenExchanger(_settings())
+    token = await exchanger.exchange("user-token-abc")
 
-    assert token == "abc"
-    assert route.called
-    sent = route.calls.last.request
-    assert "username=tenant-user" in sent.content.decode()
-    assert "password=tenant-pass" in sent.content.decode()
+    assert token == "exchanged"
+    sent = route.calls.last.request.content.decode()
+    assert (
+        "grant_type=urn%3Aietf%3Aparams%3Aoauth%3Agrant-type%3Atoken-exchange" in sent
+    )
+    assert "subject_token=user-token-abc" in sent
+    assert "audience=restrackit-backend" not in sent  # non hardcoded: verificato sotto
+    assert "client_id=pantry-mcp-token-exchange" in sent
+    assert "client_secret=exchanger-secret" in sent
 
 
 @respx.mock
-async def test_get_token_uses_cache_before_expiry():
+async def test_exchange_uses_configured_audience():
     route = respx.post(
         "https://kc.example.com/realms/restrackit/protocol/openid-connect/token"
     ).mock(
         return_value=httpx.Response(
-            200, json={"access_token": "abc", "expires_in": 300}
+            200, json={"access_token": "exchanged", "expires_in": 300}
         )
     )
 
-    provider = TokenProvider(_settings(), "tenant-user", "tenant-pass")
-    await provider.get_token()
-    await provider.get_token()
+    await TokenExchanger(_settings(backend_client_id="restrackit-backend")).exchange(
+        "user-token-abc"
+    )
+
+    sent = route.calls.last.request.content.decode()
+    assert "audience=restrackit-backend" in sent
+
+
+@respx.mock
+async def test_exchange_caches_per_user_token_before_expiry():
+    route = respx.post(
+        "https://kc.example.com/realms/restrackit/protocol/openid-connect/token"
+    ).mock(
+        return_value=httpx.Response(
+            200, json={"access_token": "exchanged", "expires_in": 300}
+        )
+    )
+
+    exchanger = TokenExchanger(_settings())
+    await exchanger.exchange("user-token-abc")
+    await exchanger.exchange("user-token-abc")
 
     assert route.call_count == 1
 
 
 @respx.mock
-async def test_get_token_refetches_after_expiry():
-    route = respx.post(
+async def test_exchange_does_not_share_cache_across_different_user_tokens():
+    respx.post(
         "https://kc.example.com/realms/restrackit/protocol/openid-connect/token"
     ).mock(
         side_effect=[
-            httpx.Response(200, json={"access_token": "expired", "expires_in": -100}),
-            httpx.Response(200, json={"access_token": "fresh", "expires_in": 300}),
+            httpx.Response(200, json={"access_token": "for-user-a", "expires_in": 300}),
+            httpx.Response(200, json={"access_token": "for-user-b", "expires_in": 300}),
         ]
     )
 
-    provider = TokenProvider(_settings(), "tenant-user", "tenant-pass")
-    first = await provider.get_token()
-    second = await provider.get_token()
+    exchanger = TokenExchanger(_settings())
+    first = await exchanger.exchange("user-token-a")
+    second = await exchanger.exchange("user-token-b")
 
-    assert first == "expired"
-    assert second == "fresh"
-    assert route.call_count == 2
+    assert first == "for-user-a"
+    assert second == "for-user-b"
+
+
+@respx.mock
+async def test_exchange_cache_does_not_grow_unbounded():
+    """The cache is keyed by raw user tokens with no natural expiry (M1);
+    it must not grow past its cap even when every request uses a new token."""
+    from pantry_mcp.auth import _CACHE_MAX_ENTRIES
+
+    respx.post(
+        "https://kc.example.com/realms/restrackit/protocol/openid-connect/token"
+    ).mock(return_value=httpx.Response(200, json={"access_token": "exchanged", "expires_in": 300}))
+
+    exchanger = TokenExchanger(_settings())
+    for i in range(_CACHE_MAX_ENTRIES + 50):
+        await exchanger.exchange(f"user-token-{i}")
+
+    assert len(exchanger._cache) <= _CACHE_MAX_ENTRIES
+
+
+@respx.mock
+async def test_exchange_raises_on_keycloak_error_response():
+    respx.post(
+        "https://kc.example.com/realms/restrackit/protocol/openid-connect/token"
+    ).mock(return_value=httpx.Response(400, json={"error": "invalid_target"}))
+
+    exchanger = TokenExchanger(_settings())
+    try:
+        await exchanger.exchange("user-token-abc")
+        raise AssertionError("expected httpx.HTTPStatusError")
+    except httpx.HTTPStatusError:
+        pass
