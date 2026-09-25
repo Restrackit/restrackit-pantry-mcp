@@ -14,12 +14,14 @@ def test_settings_load_from_env(monkeypatch):
     monkeypatch.setenv("KEYCLOAK_EXCHANGE_CLIENT_SECRET", "s3cr3t")
     monkeypatch.setenv("RESTRACKIT_BACKEND_CLIENT_ID", "restrackit-backend")
     monkeypatch.setenv("RESTRACKIT_BASE_URL", "https://api.example.com/v1")
+    monkeypatch.setenv("MCP_PUBLIC_BASE_URL", "https://pantry-mcp.example.com")
     get_settings.cache_clear()
 
     settings = get_settings()
 
     assert settings.keycloak_url == "https://kc.example.com"
     assert settings.keycloak_connector_client_id == "restrackit-core"
+    assert settings.mcp_public_base_url == "https://pantry-mcp.example.com"
 
 
 def test_settings_missing_var_raises(monkeypatch):
@@ -38,6 +40,7 @@ def test_settings_reads_token_exchange_fields(monkeypatch):
     monkeypatch.setenv("KEYCLOAK_EXCHANGE_CLIENT_SECRET", "s3cr3t")
     monkeypatch.setenv("RESTRACKIT_BACKEND_CLIENT_ID", "restrackit-backend")
     monkeypatch.setenv("RESTRACKIT_BASE_URL", "https://api.example.com/v1")
+    monkeypatch.setenv("MCP_PUBLIC_BASE_URL", "https://pantry-mcp.example.com")
     get_settings.cache_clear()
 
     settings = get_settings()
@@ -55,6 +58,7 @@ def _set_base_env(monkeypatch):
     monkeypatch.setenv("KEYCLOAK_EXCHANGE_CLIENT_ID", "pantry-mcp-exchange")
     monkeypatch.setenv("RESTRACKIT_BACKEND_CLIENT_ID", "restrackit-backend")
     monkeypatch.setenv("RESTRACKIT_BASE_URL", "https://api.example.com/v1")
+    monkeypatch.setenv("MCP_PUBLIC_BASE_URL", "https://pantry-mcp.example.com")
 
 
 def test_settings_with_direct_secret_does_not_call_secrets_manager(monkeypatch):

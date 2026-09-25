@@ -22,6 +22,7 @@ def _settings_env(monkeypatch):
     monkeypatch.setenv("KEYCLOAK_EXCHANGE_CLIENT_SECRET", "exchanger-secret")
     monkeypatch.setenv("RESTRACKIT_BACKEND_CLIENT_ID", "restrackit-backend")
     monkeypatch.setenv("RESTRACKIT_BASE_URL", "https://api.example.com/v1")
+    monkeypatch.setenv("MCP_PUBLIC_BASE_URL", "https://pantry-mcp.example.com")
 
 
 def _keypair_and_jwks():
@@ -35,6 +36,7 @@ def _user_token(private_key, kid, *, store_id="1", exp_delta=300):
         private_key,
         kid,
         {
+            "iss": "https://kc.example.com/realms/restrackit",
             "aud": "pantry-mcp-connector",
             "sub": "user-1",
             "store_id": [store_id],
@@ -71,6 +73,31 @@ def test_mcp_endpoint_rejects_missing_bearer_token():
     assert response.status_code == 401
 
 
+def test_missing_bearer_token_includes_www_authenticate_header():
+    """The 401 must carry a WWW-Authenticate hint so Claude can discover Keycloak (C1)."""
+    client = TestClient(server.app)
+    response = client.post("/mcp", json={})
+    assert response.status_code == 401
+    www_authenticate = response.headers["www-authenticate"]
+    assert www_authenticate.startswith("Bearer ")
+    assert (
+        'resource_metadata="https://pantry-mcp.example.com/.well-known/'
+        'oauth-protected-resource"' in www_authenticate
+    )
+
+
+def test_oauth_protected_resource_is_reachable_without_auth():
+    """RFC 9728 discovery document must be servable with no Authorization header (C1)."""
+    client = TestClient(server.app)
+    response = client.get("/.well-known/oauth-protected-resource")
+
+    assert response.status_code == 200
+    body = response.json()
+    assert body["resource"] == "https://pantry-mcp.example.com/mcp"
+    assert body["authorization_servers"] == ["https://kc.example.com/realms/restrackit"]
+    assert body["bearer_methods_supported"] == ["header"]
+
+
 @respx.mock
 def test_mcp_endpoint_rejects_expired_token():
     private_key, kid, jwks = _keypair_and_jwks()
@@ -83,6 +110,7 @@ def test_mcp_endpoint_rejects_expired_token():
     response = client.post("/mcp", json={}, headers={"Authorization": f"Bearer {token}"})
 
     assert response.status_code == 401
+    assert "www-authenticate" in response.headers
 
 
 @respx.mock
@@ -92,7 +120,14 @@ def test_mcp_endpoint_rejects_token_missing_store_id():
         return_value=httpx.Response(200, json=jwks)
     )
     token = _sign_token(
-        private_key, kid, {"aud": "pantry-mcp-connector", "sub": "user-1", "exp": int(time.time()) + 300}
+        private_key,
+        kid,
+        {
+            "iss": "https://kc.example.com/realms/restrackit",
+            "aud": "pantry-mcp-connector",
+            "sub": "user-1",
+            "exp": int(time.time()) + 300,
+        },
     )
 
     client = TestClient(server.create_app())
@@ -111,6 +146,7 @@ def test_mcp_endpoint_rejects_non_numeric_store_id():
         private_key,
         kid,
         {
+            "iss": "https://kc.example.com/realms/restrackit",
             "aud": "pantry-mcp-connector",
             "sub": "user-1",
             "store_id": ["not-a-number"],

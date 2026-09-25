@@ -114,6 +114,19 @@ def _extract_store_id(payload: dict) -> int:
         raise JWTValidationError("Non-numeric store_id claim") from error
 
 
+_PROTECTED_RESOURCE_PATH = "/.well-known/oauth-protected-resource"
+
+
+def _unauthorized(settings) -> JSONResponse:
+    """Build the uniform 401, with the RFC 9728 discovery hint (RFC 6750 s3)."""
+    resource_metadata_url = f"{settings.mcp_public_base_url}{_PROTECTED_RESOURCE_PATH}"
+    return JSONResponse(
+        {"error": "unauthorized"},
+        status_code=401,
+        headers={"WWW-Authenticate": f'Bearer resource_metadata="{resource_metadata_url}"'},
+    )
+
+
 class _BearerAuthMiddleware(BaseHTTPMiddleware):
     """Valida il JWT utente di ogni richiesta, o la rifiuta.
 
@@ -124,19 +137,23 @@ class _BearerAuthMiddleware(BaseHTTPMiddleware):
 
     async def dispatch(self, request: Request, call_next):
         """Reject requests with no bearer token or one that fails JWT validation."""
-        if request.url.path == "/health" or request.method == "OPTIONS":
+        if (
+            request.url.path in ("/health", _PROTECTED_RESOURCE_PATH)
+            or request.method == "OPTIONS"
+        ):
             return await call_next(request)
 
+        settings = get_settings()
         auth_header = request.headers.get("Authorization", "")
         if not auth_header.startswith("Bearer "):
-            return JSONResponse({"error": "unauthorized"}, status_code=401)
+            return _unauthorized(settings)
         token = auth_header.removeprefix("Bearer ")
 
         try:
-            payload = await validate_user_token(get_settings(), token)
+            payload = await validate_user_token(settings, token)
             store_id = _extract_store_id(payload)
         except JWTValidationError:
-            return JSONResponse({"error": "unauthorized"}, status_code=401)
+            return _unauthorized(settings)
 
         token_reset = _current_user_token.set(token)
         store_reset = _current_store_id.set(store_id)
@@ -150,6 +167,24 @@ class _BearerAuthMiddleware(BaseHTTPMiddleware):
 async def health(request: Request) -> JSONResponse:
     """Liveness check, reachable without authentication."""
     return JSONResponse({"status": "ok"})
+
+
+async def oauth_protected_resource(request: Request) -> JSONResponse:
+    """RFC 9728 protected-resource metadata, reachable without authentication.
+
+    Tells an MCP client (e.g. Claude) where the authorization server is, so it
+    can start the OAuth login flow instead of getting a bare 401.
+    """
+    settings = get_settings()
+    return JSONResponse(
+        {
+            "resource": f"{settings.mcp_public_base_url}/mcp",
+            "authorization_servers": [
+                f"{settings.keycloak_url}/realms/{settings.keycloak_realm}"
+            ],
+            "bearer_methods_supported": ["header"],
+        }
+    )
 
 
 def create_app():
@@ -175,6 +210,7 @@ def create_app():
         allow_headers=["*"],
     )
     new_app.add_route("/health", health)
+    new_app.add_route(_PROTECTED_RESOURCE_PATH, oauth_protected_resource)
     return new_app
 
 

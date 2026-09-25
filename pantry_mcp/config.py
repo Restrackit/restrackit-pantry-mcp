@@ -14,6 +14,13 @@ class Settings(BaseSettings):
     keycloak_exchange_client_secret_name: str | None = None
     restrackit_backend_client_id: str
     restrackit_base_url: str
+    mcp_public_base_url: str
+    """Public URL this server is reached at (e.g. https://pantry-mcp.example.com).
+
+    No trailing slash, no path — used to build the RFC 9728 protected-resource
+    metadata document (``<mcp_public_base_url>/mcp`` as the resource, and the
+    ``WWW-Authenticate`` header on 401 responses).
+    """
 
     @model_validator(mode="after")
     def _resolve_exchange_client_secret(self) -> "Settings":
