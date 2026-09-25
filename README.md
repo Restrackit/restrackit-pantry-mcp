@@ -86,7 +86,11 @@ Claude (Desktop/mobile). No manual provisioning steps required.
      pointing at `<ApiUrl>/mcp`.
    - On first use, click "Sign in now". Claude discovers Keycloak
      automatically via `GET /.well-known/oauth-protected-resource`, so no
-     manual client ID or redirect URI entry is needed on the tenant's side.
+     redirect URI entry is needed on the tenant's side. In the connector's
+     Advanced settings, set **OAuth Client ID** to `pantry-mcp-connector`
+     (no client secret) — without it Claude falls back to Dynamic Client
+     Registration, which either fails or creates a client missing the
+     `store_id`/audience mappers this flow requires.
    - The token is exchanged server-side; no manual token provisioning is
      required.
 
