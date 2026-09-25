@@ -19,6 +19,7 @@ def _settings(*, backend_client_id: str = "some-other-audience") -> Settings:
         keycloak_exchange_client_secret="exchanger-secret",
         restrackit_backend_client_id=backend_client_id,
         restrackit_base_url="https://api.example.com/v1",
+        mcp_public_base_url="https://pantry-mcp.example.com",
     )
 
 
@@ -98,6 +99,23 @@ async def test_exchange_does_not_share_cache_across_different_user_tokens():
 
     assert first == "for-user-a"
     assert second == "for-user-b"
+
+
+@respx.mock
+async def test_exchange_cache_does_not_grow_unbounded():
+    """The cache is keyed by raw user tokens with no natural expiry (M1);
+    it must not grow past its cap even when every request uses a new token."""
+    from pantry_mcp.auth import _CACHE_MAX_ENTRIES
+
+    respx.post(
+        "https://kc.example.com/realms/restrackit/protocol/openid-connect/token"
+    ).mock(return_value=httpx.Response(200, json={"access_token": "exchanged", "expires_in": 300}))
+
+    exchanger = TokenExchanger(_settings())
+    for i in range(_CACHE_MAX_ENTRIES + 50):
+        await exchanger.exchange(f"user-token-{i}")
+
+    assert len(exchanger._cache) <= _CACHE_MAX_ENTRIES
 
 
 @respx.mock

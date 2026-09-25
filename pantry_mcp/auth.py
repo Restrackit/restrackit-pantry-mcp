@@ -13,6 +13,7 @@ import httpx
 from pantry_mcp.config import Settings
 
 _CACHE_EXPIRY_MARGIN_SECONDS = 10
+_CACHE_MAX_ENTRIES = 500
 
 
 class TokenExchanger:
@@ -69,5 +70,11 @@ class TokenExchanger:
         expires_at = (
             time.monotonic() + payload["expires_in"] - _CACHE_EXPIRY_MARGIN_SECONDS
         )
+        # ponytail: simple size cap, not a real LRU — a warm Lambda otherwise keeps
+        # every user token it has ever seen in memory. Evict the oldest-expiring
+        # entry, not the least-recently-used one; upgrade if access patterns matter.
+        if len(self._cache) >= _CACHE_MAX_ENTRIES:
+            oldest_token = min(self._cache, key=lambda key: self._cache[key][1])
+            del self._cache[oldest_token]
         self._cache[user_token] = (exchanged_token, expires_at)
         return exchanged_token
