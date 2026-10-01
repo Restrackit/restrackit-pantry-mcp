@@ -1,11 +1,26 @@
-from aws_cdk import CfnOutput, CfnParameter, Duration, RemovalPolicy, Stack
+from aws_cdk import CfnOutput, CfnParameter, Duration, Stack
 from aws_cdk import aws_apigatewayv2 as apigwv2
 from aws_cdk import aws_apigatewayv2_integrations as apigwv2_integrations
-from aws_cdk import aws_dynamodb as dynamodb
 from aws_cdk import aws_iam as iam
 from aws_cdk import aws_lambda as _lambda
 from aws_cdk.aws_lambda_python_alpha import BundlingOptions, PythonFunction
 from constructs import Construct
+
+# ponytail: this aws-cdk-lib version has no direct Lambda-env-from-Secrets-Manager
+# binding (no `_lambda.Secret`), so only the secret NAME is injected as a plain env
+# var; `pantry_mcp/config.py` fetches the value once at startup via boto3. Upgrade to
+# passing the value directly if a future aws-cdk-lib adds that construct.
+#
+# This secret is NOT created by this stack (only read). It must be created
+# manually, once, as a plain string secret holding the client secret configured
+# on Keycloak's `pantry-mcp-token-exchange` client (provisioned from
+# restrackit-core, see scripts/provision_keycloak_realm.sh there). The two
+# values must match exactly — there is no automatic sync between the two
+# systems, so rotating one without the other breaks every token exchange:
+#   aws secretsmanager create-secret \
+#     --name pantry-mcp/token-exchange-client \
+#     --secret-string '<the same secret configured on the Keycloak client>'
+TOKEN_EXCHANGE_SECRET_NAME = "pantry-mcp/token-exchange-client"
 
 
 class PantryMcpStack(Stack):
@@ -14,17 +29,11 @@ class PantryMcpStack(Stack):
 
         keycloak_url = CfnParameter(self, "KeycloakUrl", type="String")
         keycloak_realm = CfnParameter(self, "KeycloakRealm", type="String")
-        keycloak_client_id = CfnParameter(self, "KeycloakClientId", type="String")
+        keycloak_connector_client_id = CfnParameter(self, "KeycloakConnectorClientId", type="String")
+        keycloak_exchange_client_id = CfnParameter(self, "KeycloakExchangeClientId", type="String")
+        restrackit_backend_client_id = CfnParameter(self, "RestrackitBackendClientId", type="String")
         restrackit_base_url = CfnParameter(self, "RestrackitBaseUrl", type="String")
-
-        tenants_table = dynamodb.Table(
-            self,
-            "PantryMcpTenants",
-            table_name="PantryMcpTenants",
-            partition_key=dynamodb.Attribute(name="token_hash", type=dynamodb.AttributeType.STRING),
-            billing_mode=dynamodb.BillingMode.PAY_PER_REQUEST,
-            removal_policy=RemovalPolicy.RETAIN,
-        )
+        mcp_public_base_url = CfnParameter(self, "McpPublicBaseUrl", type="String")
 
         fn = PythonFunction(
             self,
@@ -49,17 +58,22 @@ class PantryMcpStack(Stack):
             environment={
                 "KEYCLOAK_URL": keycloak_url.value_as_string,
                 "KEYCLOAK_REALM": keycloak_realm.value_as_string,
-                "KEYCLOAK_CLIENT_ID": keycloak_client_id.value_as_string,
+                "KEYCLOAK_CONNECTOR_CLIENT_ID": keycloak_connector_client_id.value_as_string,
+                "KEYCLOAK_EXCHANGE_CLIENT_ID": keycloak_exchange_client_id.value_as_string,
+                "KEYCLOAK_EXCHANGE_CLIENT_SECRET_NAME": TOKEN_EXCHANGE_SECRET_NAME,
+                "RESTRACKIT_BACKEND_CLIENT_ID": restrackit_backend_client_id.value_as_string,
                 "RESTRACKIT_BASE_URL": restrackit_base_url.value_as_string,
-                "TENANTS_TABLE_NAME": tenants_table.table_name,
+                "MCP_PUBLIC_BASE_URL": mcp_public_base_url.value_as_string,
             },
         )
-        tenants_table.grant_read_data(fn)
+
+        # Un solo secret, non per-tenant: le credenziali dell'exchanger sono
+        # uguali per tutti i tenant (Task 4, TokenExchanger).
         fn.add_to_role_policy(
             iam.PolicyStatement(
                 actions=["secretsmanager:GetSecretValue"],
                 resources=[
-                    f"arn:aws:secretsmanager:{self.region}:{self.account}:secret:pantry-mcp/tenants/*"
+                    f"arn:aws:secretsmanager:{self.region}:{self.account}:secret:{TOKEN_EXCHANGE_SECRET_NAME}-*"
                 ],
             )
         )
@@ -72,9 +86,6 @@ class PantryMcpStack(Stack):
                 "PantryMcpIntegration", fn
             ),
         )
-        # Caps runaway cost from a request flood (Lambda/API Gateway/DynamoDB
-        # billing scale with request volume): 20 req/s steady-state, burst
-        # to 40, comfortably above real usage at this deployment's scale.
         apigwv2.HttpStage(
             self,
             "PantryMcpStage",
@@ -85,4 +96,3 @@ class PantryMcpStack(Stack):
         )
 
         CfnOutput(self, "ApiUrl", description="Public URL of the MCP server", value=http_api.api_endpoint)
-        CfnOutput(self, "TenantsTableName", description="DynamoDB table for tenant tokens", value=tenants_table.table_name)

@@ -16,9 +16,12 @@ def _settings() -> Settings:
     return Settings(
         keycloak_url="https://kc.example.com",
         keycloak_realm="restrackit",
-        keycloak_client_id="restrackit-core",
+        keycloak_connector_client_id="pantry-mcp-connector",
+        keycloak_exchange_client_id="pantry-mcp-token-exchange",
+        keycloak_exchange_client_secret="exchanger-secret",
+        restrackit_backend_client_id="restrackit-backend",
         restrackit_base_url="https://api.example.com/v1",
-        tenants_table_name="PantryMcpTenants",
+        mcp_public_base_url="https://pantry-mcp.example.com",
     )
 
 
