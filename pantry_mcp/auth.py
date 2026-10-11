@@ -14,6 +14,8 @@ from pantry_mcp.config import Settings
 
 _CACHE_EXPIRY_MARGIN_SECONDS = 10
 _CACHE_MAX_ENTRIES = 500
+# time.time() e non monotonic(): su Lambda il clock monotonico non avanza mentre
+# l'istanza è congelata, e la cache servirebbe token scambiati già scaduti.
 
 
 class TokenExchanger:
@@ -46,7 +48,7 @@ class TokenExchanger:
         cached = self._cache.get(user_token)
         if cached is not None:
             exchanged_token, expires_at = cached
-            if time.monotonic() < expires_at:
+            if time.time() < expires_at:
                 return exchanged_token
 
         url = (
@@ -68,7 +70,7 @@ class TokenExchanger:
 
         exchanged_token = payload["access_token"]
         expires_at = (
-            time.monotonic() + payload["expires_in"] - _CACHE_EXPIRY_MARGIN_SECONDS
+            time.time() + payload["expires_in"] - _CACHE_EXPIRY_MARGIN_SECONDS
         )
         # ponytail: simple size cap, not a real LRU — a warm Lambda otherwise keeps
         # every user token it has ever seen in memory. Evict the oldest-expiring
