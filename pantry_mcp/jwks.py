@@ -33,7 +33,8 @@ class _JWKSCache:
         if (
             not force_refresh
             and self._jwks is not None
-            and time.monotonic() - self._fetched_at < _JWKS_CACHE_TTL_SECONDS
+            # time.time(): su Lambda il clock monotonico non avanza da congelata.
+            and time.time() - self._fetched_at < _JWKS_CACHE_TTL_SECONDS
         ):
             return self._jwks
 
@@ -41,7 +42,7 @@ class _JWKSCache:
             response = await client.get(jwks_url)
             response.raise_for_status()
             self._jwks = response.json()
-            self._fetched_at = time.monotonic()
+            self._fetched_at = time.time()
             return self._jwks
 
 
