@@ -130,3 +130,25 @@ async def test_exchange_raises_on_keycloak_error_response():
         raise AssertionError("expected httpx.HTTPStatusError")
     except httpx.HTTPStatusError:
         pass
+
+
+@respx.mock
+async def test_exchange_logs_user_token_claims_when_exchanged_token_already_expired(
+    caplog,
+):
+    from jose import jwt
+
+    user_token = jwt.encode({"sid": "sess-1", "exp": 2000000000}, "k", algorithm="HS256")
+    respx.post(
+        "https://kc.example.com/realms/restrackit/protocol/openid-connect/token"
+    ).mock(
+        return_value=httpx.Response(
+            200, json={"access_token": "exchanged", "expires_in": -100}
+        )
+    )
+
+    await TokenExchanger(_settings()).exchange(user_token)
+
+    assert "expires_in=-100" in caplog.text
+    assert "sid=sess-1" in caplog.text
+    assert user_token not in caplog.text

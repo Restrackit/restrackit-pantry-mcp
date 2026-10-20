@@ -1,8 +1,32 @@
+import logging
+import time
 from typing import Any, Protocol
 
 import httpx
+from jose import JWTError, jwt
 
 from pantry_mcp.config import Settings
+
+logger = logging.getLogger(__name__)
+
+
+def _log_rejected_token_claims(token: str) -> None:
+    """Logga i claim (mai il token) di un token scambiato rifiutato dal backend."""
+    try:
+        claims = jwt.get_unverified_claims(token)
+    except JWTError:
+        logger.error("ERR_AUTH_002: token scambiato non decodificabile")
+        return
+    logger.error(
+        "ERR_AUTH_002: now=%s iat=%s exp=%s iss=%s aud=%s azp=%s sid=%s",
+        int(time.time()),
+        claims.get("iat"),
+        claims.get("exp"),
+        claims.get("iss"),
+        claims.get("aud"),
+        claims.get("azp"),
+        claims.get("sid"),
+    )
 
 
 class _TokenSource(Protocol):
@@ -59,6 +83,8 @@ class RestrackitClient:
         if response.status_code >= 400:
             body = response.json()
             error = body.get("error", {})
+            if error.get("code") == "ERR_AUTH_002":
+                _log_rejected_token_claims(token)
             raise RestrackitApiError(
                 response.status_code,
                 error.get("code", "UNKNOWN"),

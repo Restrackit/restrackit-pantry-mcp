@@ -6,14 +6,18 @@ Keycloak per il login OAuth di Claude e lo scambia lato server usando le
 proprie credenziali (pantry-mcp-token-exchange), non quelle dell'utente.
 """
 
+import logging
 import time
 
 import httpx
+from jose import JWTError, jwt
 
 from pantry_mcp.config import Settings
 
 _CACHE_EXPIRY_MARGIN_SECONDS = 10
 _CACHE_MAX_ENTRIES = 500
+
+logger = logging.getLogger(__name__)
 # time.time() e non monotonic(): su Lambda il clock monotonico non avanza mentre
 # l'istanza è congelata, e la cache servirebbe token scambiati già scaduti.
 
@@ -69,6 +73,8 @@ class TokenExchanger:
             payload = response.json()
 
         exchanged_token = payload["access_token"]
+        if payload["expires_in"] <= _CACHE_EXPIRY_MARGIN_SECONDS:
+            _log_short_lived_exchange(user_token, payload["expires_in"])
         expires_at = (
             time.time() + payload["expires_in"] - _CACHE_EXPIRY_MARGIN_SECONDS
         )
@@ -80,3 +86,20 @@ class TokenExchanger:
             del self._cache[oldest_token]
         self._cache[user_token] = (exchanged_token, expires_at)
         return exchanged_token
+
+
+def _log_short_lived_exchange(user_token: str, expires_in: int) -> None:
+    """Logga i claim (mai il token) del token utente quando lo scambio torna già scaduto."""
+    try:
+        claims = jwt.get_unverified_claims(user_token)
+    except JWTError:
+        claims = {}
+    logger.warning(
+        "token exchange con expires_in=%s: now=%s user iat=%s exp=%s sid=%s azp=%s",
+        expires_in,
+        int(time.time()),
+        claims.get("iat"),
+        claims.get("exp"),
+        claims.get("sid"),
+        claims.get("azp"),
+    )
