@@ -183,6 +183,13 @@ async def oauth_protected_resource(request: Request) -> JSONResponse:
                 f"{settings.keycloak_url}/realms/{settings.keycloak_realm}"
             ],
             "bearer_methods_supported": ["header"],
+            # Senza questo campo, alcuni client (es. Claude) risalgono a
+            # scopes_supported nel discovery OIDC di Keycloak, che è per
+            # l'intero realm (include scope di altri client come
+            # restrackit-backend-audience, riservato a pantry-mcp-token-
+            # exchange) e viene rifiutato da Keycloak con "Invalid scopes".
+            # pantry-mcp-connector richiede solo openid.
+            "scopes_supported": ["openid"],
         }
     )
 

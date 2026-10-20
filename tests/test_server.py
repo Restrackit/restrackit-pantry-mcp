@@ -96,6 +96,7 @@ def test_oauth_protected_resource_is_reachable_without_auth():
     assert body["resource"] == "https://pantry-mcp.example.com/mcp"
     assert body["authorization_servers"] == ["https://kc.example.com/realms/restrackit"]
     assert body["bearer_methods_supported"] == ["header"]
+    assert body["scopes_supported"] == ["openid"]
 
 
 @respx.mock
