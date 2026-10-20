@@ -50,6 +50,8 @@ class PantryMcpStack(Stack):
                     ".git",
                     ".pytest_cache",
                     ".ruff_cache",
+                    ".env",
+                    ".DS_Store",
                     "*.egg-info",
                     "infra",
                     "tests",
