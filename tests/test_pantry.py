@@ -6,6 +6,7 @@ from pantry_mcp.pantry import (
     add_purchase,
     get_expiring_items,
     get_pantry_status,
+    list_products,
     record_consumption,
 )
 
@@ -100,3 +101,15 @@ async def test_record_consumption_rejects_non_positive_quantity(quantity):
         await record_consumption(client, "Pasta", quantity)
 
     client.list_open_batches.assert_not_awaited()
+
+
+async def test_list_products_returns_name_and_category_only():
+    client = AsyncMock()
+    client.list_products.return_value = [
+        {"public_id": "p1", "name": "pasta", "category": "alimentari", "version": 1}
+    ]
+
+    result = await list_products(client, "alimentari")
+
+    client.list_products.assert_awaited_once_with("alimentari")
+    assert result == [{"name": "pasta", "category": "alimentari"}]

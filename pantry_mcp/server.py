@@ -67,6 +67,16 @@ async def _get_client() -> RestrackitClient:
 
 
 @mcp.tool()
+async def list_products(category: str | None = None) -> list[dict[str, str]]:
+    """List the product masters already registered (name and category).
+
+    Call this before ``add_purchase`` and reuse the exact name and category of
+    products that already exist, instead of inventing new ones.
+    """
+    return await pantry.list_products(await _get_client(), category)
+
+
+@mcp.tool()
 async def add_purchase(items: list[pantry.PurchaseItem]) -> dict[str, int]:
     """Record a purchase: creates products/categories/storage methods as needed, one batch per unit.
 
@@ -75,7 +85,8 @@ async def add_purchase(items: list[pantry.PurchaseItem]) -> dict[str, int]:
     values with a tuned default shelf life. Other values are accepted but fall
     back to a generic long shelf life, which is wrong for anything that
     actually needs refrigeration. ``expiry_date`` must be in ``YYYY-MM-DD``
-    format.
+    format. Call ``list_products`` first and reuse the names of products that
+    already exist; a product found by name keeps its registered category.
     """
     return await pantry.add_purchase(await _get_client(), items)
 

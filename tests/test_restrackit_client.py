@@ -111,32 +111,41 @@ async def test_ensure_category_creates_if_missing():
     assert create_route.calls.last.request.content == b'{"name":"Pulizia"}'
 
 
+_LIST_URL = "https://api.example.com/v1/products/list"
+_BULK_URL = "https://api.example.com/v1/products/bulk-load"
+
+
+def _product(name: str, category: str, public_id: str) -> dict:
+    return {"public_id": public_id, "name": name, "category": category}
+
+
 @respx.mock
-async def test_ensure_product_bulk_loads_then_resolves_public_id():
-    bulk_route = respx.post("https://api.example.com/v1/products/bulk-load").mock(
+async def test_ensure_product_reuses_existing_product_in_other_category():
+    bulk_route = respx.post(_BULK_URL).mock(return_value=httpx.Response(201, json={}))
+    respx.get(_LIST_URL).mock(
         return_value=httpx.Response(
-            201, json={"status": "ok", "messaggio": "ok", "riepilogo": {"nuovi_inseriti": 1, "gia_presenti": 0}}
+            200, json={"items": [_product("piadina", "pane", "11111111-1111-1111-1111-111111111111")]}
         )
     )
-    respx.get("https://api.example.com/v1/products/list", params={"category": "pasta"}).mock(
-        return_value=httpx.Response(
-            200,
-            json={
-                "items": [
-                    {
-                        "public_id": "22222222-2222-2222-2222-222222222222",
-                        "name": "Pasta di semola",
-                        "category": "pasta",
-                        "allergen_mask": 0,
-                        "allergens": [],
-                        "gluten_free": False,
-                        "created_at": "2026-01-01T00:00:00Z",
-                        "updated_at": "2026-01-01T00:00:00Z",
-                        "version": 1,
-                    }
-                ]
-            },
-        )
+    client = RestrackitClient(_settings(), _FakeTokenProvider(), store_id=42)
+
+    public_id = await client.ensure_product("Piadina", "piadine")
+
+    assert public_id == "11111111-1111-1111-1111-111111111111"
+    assert not bulk_route.called
+
+
+@respx.mock
+async def test_ensure_product_bulk_loads_missing_product_then_resolves_public_id():
+    bulk_route = respx.post(_BULK_URL).mock(return_value=httpx.Response(201, json={}))
+    respx.get(_LIST_URL).mock(
+        side_effect=[
+            httpx.Response(200, json={"items": []}),
+            httpx.Response(
+                200,
+                json={"items": [_product("pasta di semola", "pasta", "22222222-2222-2222-2222-222222222222")]},
+            ),
+        ]
     )
     client = RestrackitClient(_settings(), _FakeTokenProvider(), store_id=42)
 
@@ -148,18 +157,23 @@ async def test_ensure_product_bulk_loads_then_resolves_public_id():
 
 @respx.mock
 async def test_ensure_product_raises_if_not_found_after_load():
-    respx.post("https://api.example.com/v1/products/bulk-load").mock(
-        return_value=httpx.Response(
-            201, json={"status": "ok", "messaggio": "ok", "riepilogo": {"nuovi_inseriti": 1, "gia_presenti": 0}}
-        )
-    )
-    respx.get("https://api.example.com/v1/products/list", params={"category": "pasta"}).mock(
-        return_value=httpx.Response(200, json={"items": []})
-    )
+    respx.post(_BULK_URL).mock(return_value=httpx.Response(201, json={}))
+    respx.get(_LIST_URL).mock(return_value=httpx.Response(200, json={"items": []}))
     client = RestrackitClient(_settings(), _FakeTokenProvider(), store_id=42)
 
     with pytest.raises(LookupError):
         await client.ensure_product("Pasta di semola", "pasta")
+
+
+@respx.mock
+async def test_list_products_includes_preparations_and_filters_by_category():
+    route = respx.get(_LIST_URL).mock(return_value=httpx.Response(200, json={"items": []}))
+    client = RestrackitClient(_settings(), _FakeTokenProvider(), store_id=42)
+
+    await client.list_products("pasta")
+
+    assert route.calls.last.request.url.params["include_preparations"] == "true"
+    assert route.calls.last.request.url.params["category"] == "pasta"
 
 
 @respx.mock

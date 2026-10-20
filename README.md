@@ -37,9 +37,11 @@ restrackit-core REST API
 
 | Tool | Purpose |
 |---|---|
-| `add_purchase` | Record a purchase — creates the product/category/storage method if missing, one batch per unit |
+| `list_products` | List the product masters already registered (name + category) — call it before `add_purchase` |
+| `add_purchase` | Record a purchase — reuses an existing product by name (keeping its category), creates it if missing, one batch per unit |
 | `get_pantry_status` | Return how much of each product is currently on hand |
 | `record_consumption` | Close out units of a product you've used up (oldest first) |
+| `get_expiring_items` | Open batches sorted by expiry date, soonest first |
 
 There's no dedicated "shopping list" tool — ask Claude what you're low on
 and it reasons over `get_pantry_status` in the conversation.

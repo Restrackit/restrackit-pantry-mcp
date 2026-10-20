@@ -121,17 +121,36 @@ class RestrackitClient:
                 return item["public_id"]
         raise LookupError(f"Storage method '{name}' not found")
 
+    async def list_products(self, category: str | None = None) -> list[dict[str, Any]]:
+        """Return the store's product masters (preparations included)."""
+        params: dict[str, Any] = {"include_preparations": "true"}
+        if category is not None:
+            params["category"] = category
+        response = await self.request("GET", "/products/list", params=params)
+        return response.json()["items"]
+
+    async def _find_product(self, name: str) -> dict[str, Any] | None:
+        for item in await self.list_products():
+            if item["name"].lower() == name.lower():
+                return item
+        return None
+
     async def ensure_product(self, name: str, category: str) -> str:
+        # Cerca per nome in tutte le categorie: bulk-load non cambia la categoria
+        # di un prodotto già esistente, quindi cercarlo solo in `category` lo
+        # farebbe risultare "mancante" se è registrato sotto un'altra.
+        existing = await self._find_product(name)
+        if existing is not None:
+            return existing["public_id"]
         await self.request(
             "POST",
             "/products/bulk-load",
             json=[{"name": name, "category": category, "allergens": []}],
         )
-        response = await self.request("GET", "/products/list", params={"category": category})
-        for item in response.json()["items"]:
-            if item["name"].lower() == name.lower():
-                return item["public_id"]
-        raise LookupError(f"Product '{name}' not found after bulk-load")
+        created = await self._find_product(name)
+        if created is None:
+            raise LookupError(f"Product '{name}' not found after bulk-load")
+        return created["public_id"]
 
     async def ensure_storage_rule(
         self, product_public_id: str, storage_method_public_id: str, storage_method_name: str

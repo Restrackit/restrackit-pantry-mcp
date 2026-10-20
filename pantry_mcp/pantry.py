@@ -57,6 +57,14 @@ async def add_purchase(client: RestrackitClient, items: list[PurchaseItem]) -> d
     return {"items_created": total_created}
 
 
+async def list_products(
+    client: RestrackitClient, category: str | None = None
+) -> list[dict[str, str]]:
+    """Return the product masters (name + category) already registered in the store."""
+    products = await client.list_products(category)
+    return [{"name": p["name"], "category": p["category"]} for p in products]
+
+
 async def get_pantry_status(
     client: RestrackitClient, product_name: str | None = None
 ) -> dict[str, int]:
