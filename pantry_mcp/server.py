@@ -77,6 +77,27 @@ async def list_products(category: str | None = None) -> list[dict[str, str]]:
 
 
 @mcp.tool()
+async def delete_product(product_name: str) -> dict[str, str]:
+    """Delete a product master by exact name (soft delete).
+
+    Destructive: only call it after the user has explicitly confirmed which
+    product to delete. Fails if the product still has open batches in the
+    pantry; consume or close those first.
+    """
+    return await pantry.delete_product(await _get_client(), product_name)
+
+
+@mcp.tool()
+async def delete_category(category_name: str) -> dict[str, str]:
+    """Delete a category by exact name (soft delete).
+
+    Destructive: only call it after the user has explicitly confirmed. Fails if
+    any product still belongs to the category; delete or move those first.
+    """
+    return await pantry.delete_category(await _get_client(), category_name)
+
+
+@mcp.tool()
 async def add_purchase(items: list[pantry.PurchaseItem]) -> dict[str, int]:
     """Record a purchase: creates products/categories/storage methods as needed, one batch per unit.
 

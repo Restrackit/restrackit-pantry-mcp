@@ -152,6 +152,26 @@ class RestrackitClient:
             raise LookupError(f"Product '{name}' not found after bulk-load")
         return created["public_id"]
 
+    async def delete_product(self, name: str) -> None:
+        """Soft-delete a product master by name; the backend refuses if it has active batches."""
+        product = await self._find_product(name)
+        if product is None:
+            raise LookupError(f"Product '{name}' not found")
+        await self.request(
+            "DELETE", f"/products/{product['public_id']}", params={"version": product["version"]}
+        )
+
+    async def delete_category(self, name: str) -> None:
+        """Soft-delete a category by name; the backend refuses if products still use it."""
+        response = await self.request("GET", "/categories")
+        for item in response.json():
+            if item["name"].lower() == name.lower():
+                await self.request(
+                    "DELETE", f"/categories/{item['public_id']}", params={"version": item["version"]}
+                )
+                return
+        raise LookupError(f"Category '{name}' not found")
+
     async def ensure_storage_rule(
         self, product_public_id: str, storage_method_public_id: str, storage_method_name: str
     ) -> None:

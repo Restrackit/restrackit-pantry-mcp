@@ -209,6 +209,8 @@ def test_mcp_handshake_lists_all_tools():
         "record_consumption",
         "get_expiring_items",
         "list_products",
+        "delete_product",
+        "delete_category",
     }
 
 

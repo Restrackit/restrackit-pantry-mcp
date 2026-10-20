@@ -4,6 +4,8 @@ import pytest
 
 from pantry_mcp.pantry import (
     add_purchase,
+    delete_category,
+    delete_product,
     get_expiring_items,
     get_pantry_status,
     list_products,
@@ -113,3 +115,13 @@ async def test_list_products_returns_name_and_category_only():
 
     client.list_products.assert_awaited_once_with("alimentari")
     assert result == [{"name": "pasta", "category": "alimentari"}]
+
+
+async def test_delete_product_and_category_delegate_to_client():
+    client = AsyncMock()
+
+    assert await delete_product(client, "pasta") == {"deleted": "pasta"}
+    assert await delete_category(client, "pasta") == {"deleted": "pasta"}
+
+    client.delete_product.assert_awaited_once_with("pasta")
+    client.delete_category.assert_awaited_once_with("pasta")

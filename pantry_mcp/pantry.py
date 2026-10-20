@@ -65,6 +65,18 @@ async def list_products(
     return [{"name": p["name"], "category": p["category"]} for p in products]
 
 
+async def delete_product(client: RestrackitClient, product_name: str) -> dict[str, str]:
+    """Delete a product master by name."""
+    await client.delete_product(product_name)
+    return {"deleted": product_name}
+
+
+async def delete_category(client: RestrackitClient, category_name: str) -> dict[str, str]:
+    """Delete a category by name."""
+    await client.delete_category(category_name)
+    return {"deleted": category_name}
+
+
 async def get_pantry_status(
     client: RestrackitClient, product_name: str | None = None
 ) -> dict[str, int]:

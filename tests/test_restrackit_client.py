@@ -177,6 +177,61 @@ async def test_list_products_includes_preparations_and_filters_by_category():
 
 
 @respx.mock
+async def test_delete_product_sends_current_version():
+    respx.get(_LIST_URL).mock(
+        return_value=httpx.Response(
+            200,
+            json={"items": [{"public_id": "p-1", "name": "gocciole", "category": "biscotti", "version": 3}]},
+        )
+    )
+    route = respx.delete("https://api.example.com/v1/products/p-1").mock(
+        return_value=httpx.Response(200, json={"status": "success"})
+    )
+    client = RestrackitClient(_settings(), _FakeTokenProvider(), store_id=42)
+
+    await client.delete_product("Gocciole")
+
+    assert route.calls.last.request.url.params["version"] == "3"
+
+
+@respx.mock
+async def test_delete_product_raises_if_missing():
+    respx.get(_LIST_URL).mock(return_value=httpx.Response(200, json={"items": []}))
+    client = RestrackitClient(_settings(), _FakeTokenProvider(), store_id=42)
+
+    with pytest.raises(LookupError):
+        await client.delete_product("gocciole")
+
+
+@respx.mock
+async def test_delete_category_sends_current_version():
+    respx.get("https://api.example.com/v1/categories").mock(
+        return_value=httpx.Response(
+            200, json=[{"public_id": "c-1", "name": "Biscotti", "version": 2}]
+        )
+    )
+    route = respx.delete("https://api.example.com/v1/categories/c-1").mock(
+        return_value=httpx.Response(200, json={"status": "success"})
+    )
+    client = RestrackitClient(_settings(), _FakeTokenProvider(), store_id=42)
+
+    await client.delete_category("biscotti")
+
+    assert route.calls.last.request.url.params["version"] == "2"
+
+
+@respx.mock
+async def test_delete_category_raises_if_missing():
+    respx.get("https://api.example.com/v1/categories").mock(
+        return_value=httpx.Response(200, json=[])
+    )
+    client = RestrackitClient(_settings(), _FakeTokenProvider(), store_id=42)
+
+    with pytest.raises(LookupError):
+        await client.delete_category("biscotti")
+
+
+@respx.mock
 async def test_ensure_storage_rule_creates_with_default_duration():
     route = respx.post(
         "https://api.example.com/v1/products/22222222-2222-2222-2222-222222222222/storage-rules"

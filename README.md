@@ -38,6 +38,8 @@ restrackit-core REST API
 | Tool | Purpose |
 |---|---|
 | `list_products` | List the product masters already registered (name + category) — call it before `add_purchase` |
+| `delete_product` | Soft-delete a product master by name (refused while it has open batches) — ask the user to confirm first |
+| `delete_category` | Soft-delete a category by name (refused while products still use it) — ask the user to confirm first |
 | `add_purchase` | Record a purchase — reuses an existing product by name (keeping its category), creates it if missing, one batch per unit |
 | `get_pantry_status` | Return how much of each product is currently on hand |
 | `record_consumption` | Close out units of a product you've used up (oldest first) |
