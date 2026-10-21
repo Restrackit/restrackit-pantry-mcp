@@ -207,6 +207,7 @@ def test_mcp_handshake_lists_all_tools():
         "get_pantry_status",
         "record_consumption",
         "get_expiring_items",
+        "build_shopping_list",
     }
 
 

@@ -11,6 +11,32 @@ from typing import Any, TypedDict
 
 from pantry_mcp.restrackit_client import RestrackitClient
 
+# Percorso tipico di un supermercato italiano: (reparto, parole chiave sulla categoria).
+# ponytail: mappa statica generica, niente layout per-negozio.
+AISLES: list[tuple[str, tuple[str, ...]]] = [
+    ("ortofrutta", ("frutta", "verdura", "ortofrutta")),
+    ("panetteria", ("pane", "panetteria", "forno")),
+    ("salumi e latticini", ("salumi", "latticin", "formaggi", "latte", "uova")),
+    ("carne e pesce", ("carne", "pesce")),
+    (
+        "dispensa",
+        (
+            "pasta",
+            "riso",
+            "scatolame",
+            "condiment",
+            "conserve",
+            "dispensa",
+            "alimentari",
+        ),
+    ),
+    ("colazione e dolci", ("colazione", "dolci", "biscotti", "cereali")),
+    ("bevande", ("bevande", "acqua", "vino", "birra")),
+    ("surgelati", ("surgelati", "gelati")),
+    ("casa e igiene", ("pulizia", "igiene", "casa")),
+]
+FALLBACK_AISLE = "altro"
+
 
 class PurchaseItem(TypedDict):
     """A single purchased product to register in the pantry."""
@@ -92,3 +118,22 @@ async def record_consumption(
 
     missing = quantity - len(to_close)
     return {"closed": len(to_close), "missing": max(missing, 0)}
+
+
+def _aisle_for(category: str) -> str:
+    category = category.lower()
+    for aisle, keywords in AISLES:
+        if any(keyword in category for keyword in keywords):
+            return aisle
+    return FALLBACK_AISLE
+
+
+async def build_shopping_list(client: RestrackitClient, items: list[str]) -> list[dict[str, Any]]:
+    """Group item names by supermarket aisle, in typical walking order."""
+    categories = {p["name"].lower(): p["category"] for p in await client.list_products()}
+    grouped: dict[str, list[str]] = {}
+    for name in items:
+        aisle = _aisle_for(categories.get(name.lower(), FALLBACK_AISLE))
+        grouped.setdefault(aisle, []).append(name)
+    order = [aisle for aisle, _ in AISLES] + [FALLBACK_AISLE]
+    return [{"aisle": aisle, "items": grouped[aisle]} for aisle in order if aisle in grouped]
