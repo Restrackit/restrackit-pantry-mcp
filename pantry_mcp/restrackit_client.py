@@ -107,6 +107,11 @@ class RestrackitClient:
                 return item["public_id"]
         raise LookupError(f"Product '{name}' not found after bulk-load")
 
+    async def list_products(self) -> list[dict[str, Any]]:
+        """Return all product masters (each with ``name`` and ``category``)."""
+        response = await self.request("GET", "/products/list")
+        return response.json()["items"]
+
     async def ensure_storage_rule(
         self, product_public_id: str, storage_method_public_id: str, storage_method_name: str
     ) -> None:

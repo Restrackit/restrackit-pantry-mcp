@@ -98,6 +98,16 @@ async def get_expiring_items() -> list[dict[str, Any]]:
     return await pantry.get_expiring_items(await _get_client())
 
 
+@mcp.tool()
+async def build_shopping_list(items: list[str]) -> list[dict[str, Any]]:
+    """Group shopping items by supermarket aisle, ordered as a typical shopping route.
+
+    `items` is the list of product names to buy; nothing is stored. The aisle
+    order is a generic default and can be reordered by the user.
+    """
+    return await pantry.build_shopping_list(await _get_client(), items)
+
+
 def _extract_store_id(payload: dict) -> int:
     """Estrae store_id dal claim del token; solleva se mancante o non numerico.
 

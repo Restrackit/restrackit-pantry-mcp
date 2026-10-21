@@ -40,9 +40,10 @@ restrackit-core REST API
 | `add_purchase` | Record a purchase — creates the product/category/storage method if missing, one batch per unit |
 | `get_pantry_status` | Return how much of each product is currently on hand |
 | `record_consumption` | Close out units of a product you've used up (oldest first) |
+| `build_shopping_list` | Group a list of product names by supermarket aisle, in typical shopping-route order (nothing is stored) |
 
-There's no dedicated "shopping list" tool — ask Claude what you're low on
-and it reasons over `get_pantry_status` in the conversation.
+Ask Claude what you're low on and it reasons over `get_pantry_status` in the
+conversation, then passes the result to `build_shopping_list`.
 
 ## Multi-tenancy
 

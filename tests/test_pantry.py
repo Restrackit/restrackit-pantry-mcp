@@ -4,6 +4,7 @@ import pytest
 
 from pantry_mcp.pantry import (
     add_purchase,
+    build_shopping_list,
     get_expiring_items,
     get_pantry_status,
     record_consumption,
@@ -100,3 +101,24 @@ async def test_record_consumption_rejects_non_positive_quantity(quantity):
         await record_consumption(client, "Pasta", quantity)
 
     client.list_open_batches.assert_not_awaited()
+
+
+async def test_build_shopping_list_groups_by_aisle_in_route_order_with_fallback():
+    client = AsyncMock()
+    client.list_products.return_value = [
+        {"name": "Detersivo", "category": "pulizia"},
+        {"name": "Mele", "category": "Frutta"},
+        {"name": "Pasta", "category": "dispensa"},
+        {"name": "Pere", "category": "frutta"},
+    ]
+
+    result = await build_shopping_list(
+        client, ["detersivo", "Pasta", "Mele", "Pere", "Sconosciuto"]
+    )
+
+    assert result == [
+        {"aisle": "ortofrutta", "items": ["Mele", "Pere"]},
+        {"aisle": "dispensa", "items": ["Pasta"]},
+        {"aisle": "casa e igiene", "items": ["detersivo"]},
+        {"aisle": "altro", "items": ["Sconosciuto"]},
+    ]
