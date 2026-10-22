@@ -9,6 +9,7 @@ from pantry_mcp.pantry import (
     get_expiring_items,
     get_pantry_status,
     list_products,
+    move_item,
     record_consumption,
 )
 
@@ -125,3 +126,86 @@ async def test_delete_product_and_category_delegate_to_client():
 
     client.delete_product.assert_awaited_once_with("pasta")
     client.delete_category.assert_awaited_once_with("pasta")
+
+
+async def test_move_item_moves_oldest_batches_and_ensures_rules():
+    client = AsyncMock()
+    client.get_storage_method_public_id.return_value = "sm-dest"
+    client.list_storage_methods.return_value = [
+        {"public_id": "sm-disp", "name": "dispensa"},
+        {"public_id": "sm-dest", "name": "congelatore"},
+    ]
+    client.list_open_batches.return_value = [
+        {"public_id": "b1", "version": 1, "product_public_id": "p1", "current_storage_method_public_id": "sm-disp"},
+        {"public_id": "b2", "version": 2, "product_public_id": "p1", "current_storage_method_public_id": "sm-disp"},
+        {"public_id": "b3", "version": 1, "product_public_id": "p1", "current_storage_method_public_id": "sm-dest"},
+    ]
+
+    result = await move_item(client, "Petto di pollo", "congelatore", quantity=2)
+
+    client.ensure_storage_method.assert_awaited_once_with("congelatore")
+    client.ensure_storage_rule.assert_awaited_once_with("p1", "sm-dest", "congelatore")
+    assert client.move_batch_storage.await_count == 2
+    client.move_batch_storage.assert_any_await("b1", version=1, storage_method_public_id="sm-dest")
+    client.move_batch_storage.assert_any_await("b2", version=2, storage_method_public_id="sm-dest")
+    assert result == {"moved": 2, "missing": 0, "destination": "congelatore"}
+
+
+async def test_move_item_filters_by_source_storage_method():
+    client = AsyncMock()
+    client.get_storage_method_public_id.return_value = "sm-freezer"
+    client.list_storage_methods.return_value = [
+        {"public_id": "sm-fridge", "name": "frigo"},
+        {"public_id": "sm-pantry", "name": "dispensa"},
+        {"public_id": "sm-freezer", "name": "congelatore"},
+    ]
+    client.list_open_batches.return_value = [
+        {"public_id": "b1", "version": 1, "product_public_id": "p1", "current_storage_method_public_id": "sm-pantry"},
+        {"public_id": "b2", "version": 1, "product_public_id": "p1", "current_storage_method_public_id": "sm-fridge"},
+    ]
+
+    result = await move_item(
+        client, "Pane", "congelatore", quantity=1, source_storage_method="frigo"
+    )
+
+    client.move_batch_storage.assert_awaited_once_with("b2", version=1, storage_method_public_id="sm-freezer")
+    assert result == {"moved": 1, "missing": 0, "destination": "congelatore"}
+
+
+async def test_move_item_looks_up_product_if_not_in_batch():
+    client = AsyncMock()
+    client.get_storage_method_public_id.return_value = "sm-fridge"
+    client.list_storage_methods.return_value = [
+        {"public_id": "sm-fridge", "name": "frigo"},
+    ]
+    client.list_open_batches.return_value = [
+        {"public_id": "b1", "version": 1, "current_storage_method_public_id": None},
+    ]
+    client.find_product.return_value = {"public_id": "prod-42", "name": "Latte"}
+
+    result = await move_item(client, "Latte", "frigo", quantity=1)
+
+    client.find_product.assert_awaited_once_with("Latte")
+    client.ensure_storage_rule.assert_awaited_once_with("prod-42", "sm-fridge", "frigo")
+    client.move_batch_storage.assert_awaited_once_with("b1", version=1, storage_method_public_id="sm-fridge")
+    assert result == {"moved": 1, "missing": 0, "destination": "frigo"}
+
+
+async def test_move_item_reports_shortfall():
+    client = AsyncMock()
+    client.get_storage_method_public_id.return_value = "sm-dest"
+    client.list_storage_methods.return_value = [{"public_id": "sm-dest", "name": "frigo"}]
+    client.list_open_batches.return_value = []
+
+    result = await move_item(client, "Uova", "frigo", quantity=2)
+
+    assert result == {"moved": 0, "missing": 2, "destination": "frigo"}
+    client.move_batch_storage.assert_not_awaited()
+
+
+@pytest.mark.parametrize("quantity", [0, -1])
+async def test_move_item_rejects_non_positive_quantity(quantity):
+    client = AsyncMock()
+
+    with pytest.raises(ValueError, match="quantity must be at least 1"):
+        await move_item(client, "Latte", "frigo", quantity)

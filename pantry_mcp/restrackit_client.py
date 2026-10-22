@@ -114,6 +114,10 @@ class RestrackitClient:
             if not is_already_exists(error):
                 raise
 
+    async def list_storage_methods(self) -> list[dict[str, Any]]:
+        response = await self.request("GET", "/storage-methods")
+        return response.json()
+
     async def get_storage_method_public_id(self, name: str) -> str:
         response = await self.request("GET", "/storage-methods")
         for item in response.json():
@@ -129,11 +133,13 @@ class RestrackitClient:
         response = await self.request("GET", "/products/list", params=params)
         return response.json()["items"]
 
-    async def _find_product(self, name: str) -> dict[str, Any] | None:
+    async def find_product(self, name: str) -> dict[str, Any] | None:
         for item in await self.list_products():
             if item["name"].lower() == name.lower():
                 return item
         return None
+
+    _find_product = find_product
 
     async def ensure_product(self, name: str, category: str) -> str:
         # Cerca per nome in tutte le categorie: bulk-load non cambia la categoria
@@ -236,5 +242,15 @@ class RestrackitClient:
             "POST",
             f"/inventory/batch/{batch_id}/complete",
             json={"reason": reason, "version": version},
+        )
+        return response.json()
+
+    async def move_batch_storage(
+        self, batch_id: str, version: int, storage_method_public_id: str
+    ) -> dict[str, Any]:
+        response = await self.request(
+            "POST",
+            f"/inventory/batch/{batch_id}/move-storage",
+            json={"version": version, "storage_method_public_id": storage_method_public_id},
         )
         return response.json()

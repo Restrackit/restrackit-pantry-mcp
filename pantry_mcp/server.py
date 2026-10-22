@@ -130,6 +130,31 @@ async def get_expiring_items() -> list[dict[str, Any]]:
     return await pantry.get_expiring_items(await _get_client())
 
 
+@mcp.tool()
+async def move_item(
+    product_name: str,
+    destination_storage_method: str,
+    quantity: int = 1,
+    source_storage_method: str | None = None,
+) -> dict[str, Any]:
+    """Move `quantity` units of a product to a new storage method (e.g. from fridge to freezer).
+
+    `destination_storage_method` should be one of `"dispensa"` (pantry), `"frigo"`
+    (fridge), or `"congelatore"` (freezer). Other values are accepted as custom methods.
+    `source_storage_method` is optional: if specified, only units currently in that
+    storage method are moved.
+    Units are moved oldest-first. Automatically ensures the target storage method and
+    rule exist, and restrackit recalculates secondary shelf-life expiration.
+    """
+    return await pantry.move_item(
+        await _get_client(),
+        product_name=product_name,
+        destination_storage_method=destination_storage_method,
+        quantity=quantity,
+        source_storage_method=source_storage_method,
+    )
+
+
 def _extract_store_id(payload: dict) -> int:
     """Estrae store_id dal claim del token; solleva se mancante o non numerico.
 

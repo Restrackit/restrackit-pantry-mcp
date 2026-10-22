@@ -211,6 +211,7 @@ def test_mcp_handshake_lists_all_tools():
         "list_products",
         "delete_product",
         "delete_category",
+        "move_item",
     }
 
 
@@ -264,6 +265,91 @@ def test_different_tokens_route_to_different_stores():
         if call.request.url.path == "/v1/inventory/list"
     ]
     assert sent_stores == ["1", "2"]
+
+
+@respx.mock
+def test_mcp_tool_move_item_executes():
+    private_key, kid, jwks = _keypair_and_jwks()
+    respx.get("https://kc.example.com/realms/restrackit/protocol/openid-connect/certs").mock(
+        return_value=httpx.Response(200, json=jwks)
+    )
+    respx.post("https://kc.example.com/realms/restrackit/protocol/openid-connect/token").mock(
+        return_value=httpx.Response(200, json={"access_token": "exchanged", "expires_in": 300})
+    )
+    respx.get("https://api.example.com/v1/storage-methods").mock(
+        return_value=httpx.Response(
+            200,
+            json=[
+                {"public_id": "sm-disp", "name": "dispensa"},
+                {"public_id": "sm-frigo", "name": "frigo"},
+            ],
+        )
+    )
+    respx.get("https://api.example.com/v1/inventory/list").mock(
+        return_value=httpx.Response(
+            200,
+            json={
+                "status": "ok",
+                "count": 1,
+                "items": [
+                    {
+                        "public_id": "batch-1",
+                        "product_name": "Latte",
+                        "product_public_id": "prod-1",
+                        "current_storage_method_public_id": "sm-disp",
+                        "version": 1,
+                    }
+                ],
+                "next_cursor": None,
+            },
+        )
+    )
+    respx.post("https://api.example.com/v1/products/prod-1/storage-rules").mock(
+        return_value=httpx.Response(201, json={"status": "ok"})
+    )
+    move_route = respx.post("https://api.example.com/v1/inventory/batch/batch-1/move-storage").mock(
+        return_value=httpx.Response(200, json={"status": "ok"})
+    )
+
+    token = _user_token(private_key, kid, store_id="1")
+    headers = {
+        "Authorization": f"Bearer {token}",
+        "Content-Type": "application/json",
+        "Accept": "application/json, text/event-stream",
+    }
+    with TestClient(server.create_app()) as client:
+        client.post(
+            "/mcp",
+            json={
+                "jsonrpc": "2.0",
+                "id": 1,
+                "method": "initialize",
+                "params": {
+                    "protocolVersion": "2025-06-18",
+                    "capabilities": {},
+                    "clientInfo": {"name": "test-client", "version": "0.1"},
+                },
+            },
+            headers=headers,
+        )
+        call_response = client.post(
+            "/mcp",
+            json={
+                "jsonrpc": "2.0",
+                "id": 2,
+                "method": "tools/call",
+                "params": {
+                    "name": "move_item",
+                    "arguments": {"product_name": "Latte", "destination_storage_method": "frigo", "quantity": 1},
+                },
+            },
+            headers=headers,
+        )
+
+    assert call_response.status_code == 200
+    assert move_route.called
+    result = call_response.json()["result"]
+    assert result["structuredContent"] == {"moved": 1, "missing": 0, "destination": "frigo"}
 
 
 def test_lambda_handler_wraps_health_check():

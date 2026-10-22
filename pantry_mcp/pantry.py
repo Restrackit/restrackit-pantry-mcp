@@ -112,3 +112,67 @@ async def record_consumption(
 
     missing = quantity - len(to_close)
     return {"closed": len(to_close), "missing": max(missing, 0)}
+
+
+async def move_item(
+    client: RestrackitClient,
+    product_name: str,
+    destination_storage_method: str,
+    quantity: int = 1,
+    source_storage_method: str | None = None,
+) -> dict[str, Any]:
+    """Move open batches of a product to a new storage method (oldest first).
+
+    Optionally filters by `source_storage_method`. If not specified, selects
+    batches that are not already in the destination storage method.
+    """
+    if quantity < 1:
+        raise ValueError("quantity must be at least 1")
+
+    dest_norm = destination_storage_method.strip().lower()
+    await client.ensure_storage_method(dest_norm)
+    dest_storage_id = await client.get_storage_method_public_id(dest_norm)
+
+    storage_methods = await client.list_storage_methods()
+    id_to_name = {sm["public_id"]: sm["name"].lower() for sm in storage_methods}
+
+    source_norm = source_storage_method.strip().lower() if source_storage_method else None
+
+    open_batches = await client.list_open_batches(product_name)
+
+    candidates: list[dict[str, Any]] = []
+    for batch in open_batches:
+        current_sm_id = batch.get("current_storage_method_public_id")
+        current_name = id_to_name.get(current_sm_id) if current_sm_id else None
+
+        if source_norm is not None:
+            if current_name == source_norm:
+                candidates.append(batch)
+        else:
+            if current_name != dest_norm:
+                candidates.append(batch)
+
+    to_move = candidates[:quantity]
+
+    if to_move:
+        product_public_id = to_move[0].get("product_public_id")
+        if not product_public_id:
+            product = await client.find_product(product_name)
+            if product is not None:
+                product_public_id = product["public_id"]
+        if product_public_id:
+            await client.ensure_storage_rule(product_public_id, dest_storage_id, dest_norm)
+
+        for batch in to_move:
+            await client.move_batch_storage(
+                batch["public_id"],
+                version=batch.get("version", 1),
+                storage_method_public_id=dest_storage_id,
+            )
+
+    missing = quantity - len(to_move)
+    return {
+        "moved": len(to_move),
+        "missing": max(missing, 0),
+        "destination": dest_norm,
+    }

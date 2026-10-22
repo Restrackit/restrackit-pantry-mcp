@@ -377,3 +377,54 @@ async def test_complete_batch_sends_reason_and_version():
     body = json.loads(route.calls.last.request.content)
     assert body == {"reason": "other", "version": 3}
     assert result["is_empty"] is True
+
+
+@respx.mock
+async def test_list_storage_methods_returns_items():
+    respx.get("https://api.example.com/v1/storage-methods").mock(
+        return_value=httpx.Response(
+            200,
+            json=[
+                {"public_id": "sm-1", "name": "dispensa"},
+                {"public_id": "sm-2", "name": "frigo"},
+            ],
+        )
+    )
+    client = RestrackitClient(_settings(), _FakeTokenProvider(), store_id=42)
+
+    result = await client.list_storage_methods()
+
+    assert len(result) == 2
+    assert result[0]["name"] == "dispensa"
+
+
+@respx.mock
+async def test_move_batch_storage_sends_version_and_storage_method():
+    route = respx.post("https://api.example.com/v1/inventory/batch/b1/move-storage").mock(
+        return_value=httpx.Response(200, json={"status": "success", "public_id": "b1"})
+    )
+    client = RestrackitClient(_settings(), _FakeTokenProvider(), store_id=42)
+
+    result = await client.move_batch_storage("b1", version=2, storage_method_public_id="sm-2")
+
+    body = json.loads(route.calls.last.request.content)
+    assert body == {"version": 2, "storage_method_public_id": "sm-2"}
+    assert result["status"] == "success"
+
+
+@respx.mock
+async def test_find_product_finds_case_insensitive():
+    respx.get(_LIST_URL).mock(
+        return_value=httpx.Response(
+            200,
+            json={"items": [{"public_id": "p-1", "name": "pasta", "category": "alimentari"}]},
+        )
+    )
+    client = RestrackitClient(_settings(), _FakeTokenProvider(), store_id=42)
+
+    found = await client.find_product("PASTA")
+    assert found is not None
+    assert found["public_id"] == "p-1"
+
+    missing = await client.find_product("riso")
+    assert missing is None
